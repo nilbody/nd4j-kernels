@@ -11,11 +11,12 @@ eps \
 copy \
 eq \
 gt \
-lt
+lt \
 
 all: $(SUBDIRS)
 $(SUBDIRS):
-	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_strided.cu  -o -o $(shell pwd)/../../output/$@.ptx
+	echo "In $@"
+	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_strided.cu   -o $(shell pwd)/../../output/$@.ptx
 
 .PHONY: all $(SUBDIRS)
 .PHONY: all $(SUBDIRS)

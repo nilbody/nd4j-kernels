@@ -102,4 +102,4 @@ BUILD_DIR:= build
 CURR_DIR:= $(shell pwd)
 CURR_DIR_INCLUDE:= $(CURR_DIR)/include
 COMMON_INCLUDE:=$(CURR_DIR)/../common
-BASE_COMPILE:= nvcc  -g -G -ptx -I=$(CURR_DIR_INCLUDE) -I=$(COMMON_INCLUDE) -arch=compute_50 -lcudadevrt -rdc=true  -m64 -link
+BASE_COMPILE:= nvcc  -fatbin -dlink -g -G -ptx -I=$(CURR_DIR_INCLUDE) -I=$(COMMON_INCLUDE) -arch=compute_50 -lcudadevrt -rdc=true  -fatbin -dlink
