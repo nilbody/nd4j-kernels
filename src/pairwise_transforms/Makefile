@@ -16,7 +16,7 @@ lt \
 all: $(SUBDIRS)
 $(SUBDIRS):
 	echo "In $@"
-	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_strided.cu   -o $(shell pwd)/../../output/$@.ptx
+	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_strided.cu   -o $(shell pwd)/../../output/$@_strided.ptx
 
 .PHONY: all $(SUBDIRS)
 .PHONY: all $(SUBDIRS)
