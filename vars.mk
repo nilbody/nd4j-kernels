@@ -106,4 +106,4 @@ CURR_DIR_INCLUDE:= $(CURR_DIR)/include
 COMMON_INCLUDE:=$(CURR_DIR)/../common
 SYSTEM_INCLUDE:=  -I=/usr/include -I=/usr/include/c++/4.9.2 -I=/usr/include/c++/4.9.2/backward -I=/usr/include/c++/4.9.2/x86_64-redhat-linux -I=/usr/local/include -I=/usr/lib/gccx86_64-redhat-linux/4.9.2/include
 INCLUDE := -I=$(CURR_DIR_INCLUDE) -I=$(COMMON_INCLUDE) $(SYSTEM_INCUDE)
-BASE_COMPILE:= nvcc -dlink -O3 -std=c++11 -dc  -$(EXTENSION)   $(INCLUDE)  $(GEN_CODE)
+BASE_COMPILE:= nvcc -G -g -dlink -O3 -std=c++11 -dc  -$(EXTENSION)   $(INCLUDE)  $(GEN_CODE)
