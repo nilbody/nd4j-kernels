@@ -17,8 +17,3 @@ __device__ void transform(int n, int idx,T dx,T *dy,int incy,T *params,T *result
 }
 
 
-
-
-template __device__ void transform<double>(int n, int idx,double dx,double *dy,int incy,double *params,double *result,int blockSize);
-
-template __device__ void transform<float>(int n, int idx,float dx,float *dy,int incy,float *params,float *result,int blockSize);

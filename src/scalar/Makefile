@@ -20,7 +20,7 @@ sub
 
 all: $(SUBDIRS)
 $(SUBDIRS):
-	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_scalar.cu  -o $(shell pwd)/../../output/$@_scalar.ptx
+	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@_scalar.cu $(LINK) -o $(shell pwd)/../../output/$@_scalar.$(EXTENSION)
 
 .PHONY: all $(SUBDIRS)
 .PHONY: all $(SUBDIRS)

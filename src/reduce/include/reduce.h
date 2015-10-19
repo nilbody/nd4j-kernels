@@ -20,37 +20,9 @@ __device__ T merge(T f1, T f2,T *extraParams);
 template<typename T>
 __device__ T postProcess(T reduction,int n,int xOffset,T *dx,int incx,T *extraParams,T *result);
 
+
 template<typename T>
-__device__ void transform(
-		int n
-		,T *dx
-		,int *xVectorInfo
-		,T *extraParams
-		,T *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition);
-
-template __device__ void transform<double>(
-		int n
-		,double *dx
-		,int *xVectorInfo
-		,double *extraParams
-		,double *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition);
-
-template __device__ void transform<float>(
-		int n
-		,float *dx
-		,int *xVectorInfo
-		,float *extraParams
-		,float *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition);
-
+__device__ T op(T d1,T d2,T *extraParams);
 
 
 template <>  double merge<double>(double  opOutput,double other,double *extraParams);
@@ -63,6 +35,8 @@ template <> float merge<float>(float old,float opOutput,float *extraParams);
 template <>float update<float>(float old,float opOutput,float *extraParams);
 template <> float op<float>(float d1,float *extraParams);
 template <> float postProcess<float>(float reduction,int n,int xOffset,float *dx,int incx,float *extraParams,float *result);
+
+
 
 
 

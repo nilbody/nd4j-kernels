@@ -96,10 +96,14 @@ ifeq ($(dbg),1)
 else
       BUILD_TYPE := release
 endif
-
-
+SM_50:= arch=compute_50,code=sm_50
+GEN_CODE:=  -gencode $(SM_50)
+EXTENSION := cubin
+LINK := -lcudadevrt -lcudart
 BUILD_DIR:= build
 CURR_DIR:= $(shell pwd)
 CURR_DIR_INCLUDE:= $(CURR_DIR)/include
 COMMON_INCLUDE:=$(CURR_DIR)/../common
-BASE_COMPILE:= nvcc  -fatbin -dlink -g -G -ptx -I=$(CURR_DIR_INCLUDE) -I=$(COMMON_INCLUDE) -arch=compute_50 -lcudadevrt -rdc=true  -fatbin -dlink
+SYSTEM_INCLUDE:=  -I=/usr/include -I=/usr/include/c++/4.9.2 -I=/usr/include/c++/4.9.2/backward -I=/usr/include/c++/4.9.2/x86_64-redhat-linux -I=/usr/local/include -I=/usr/lib/gccx86_64-redhat-linux/4.9.2/include
+INCLUDE := -I=$(CURR_DIR_INCLUDE) -I=$(COMMON_INCLUDE) $(SYSTEM_INCUDE)
+BASE_COMPILE:= nvcc -dlink -O3 -std=c++11 -dc  -$(EXTENSION)   $(INCLUDE)  $(GEN_CODE)

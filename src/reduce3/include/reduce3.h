@@ -16,6 +16,10 @@ __device__ T update(T old,T opOutput,T *extraParams);
 template<typename T>
 __device__ T postProcess(T reduction,int n,int xOffset,T *dx,int incx,T *extraParams,T *result);
 
+template<typename T>
+__device__ T merge(T old,T opOutput,T *extraParams);
+
+
 /**
 
 Perform a reduction
@@ -130,8 +134,4 @@ __device__ void transform(int n, int xOffset,T *dx,int incx,T *extraParams,T *re
 	}
 
 }
-
-
-template __device__ void transform_pair<double>(int n, int xOffset,int yOffset,double *dx,double *dy,int incx,int incy,double *extraParams,double *result,int i,int blockSize);
-template __device__ void transform_pair<float>(int n, int xOffset,int yOffset,float *dx,float *dy,int incx,int incy,float *extraParams,float *result,int i,int blockSize);
 

@@ -6,6 +6,9 @@ __device__ T op(T d1,T d2,T *params);
 template <typename T>
 __device__ T op(T d1,T *params);
 
+
+
+
 template <typename T>
 __device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,int incy,T *params,T *result,int incz,int blockSize) {
 
@@ -40,5 +43,4 @@ __device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,i
 		}
 	}
 }
-
 
