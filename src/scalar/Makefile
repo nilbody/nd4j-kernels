@@ -7,6 +7,7 @@ equals \
 greaterthan \
 greaterthanorequal \
 lessthan \
+lessthanorequal \
 max \
 min \
 mul \
