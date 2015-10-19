@@ -30,7 +30,7 @@ template<> __device__ double postProcess<double>(double reduction,int n,int xOff
 	return reduction;
 }
 
-
+extern "C"
 __global__ void bias_strided_double(
 		int n
 		,double *dx
@@ -76,7 +76,7 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 	return reduction;
 }
 
-
+extern "C"
 __global__ void bias_strided_float(	int n
 		,float *dx
 		,int *xVectorInfo

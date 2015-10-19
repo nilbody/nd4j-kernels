@@ -18,6 +18,7 @@ template<> __device__ double postProcess<double>(double reduction,int n,int xOff
 }
 
 
+extern "C"
 __global__ void euclidean_strided_double(int n, int xOffset,int yOffset,double *dx,double *dy,int incx,int incy,double *extraParams,double *result,int i,int blockSize) {
 	transform_pair<double>(n,xOffset,yOffset,dx,dy,incx,incy,extraParams,result,i,blockSize);
 
@@ -57,6 +58,7 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 }
 
 
+extern "C"
 __global__ void euclidean_strided_float(int n, int xOffset,int yOffset,float *dx,float *dy,int incx,int incy,float *extraParams,float *result,int i,int blockSize) {
 	transform_pair<float>(n,xOffset,yOffset,dx,dy,incx,incy,extraParams,result,i,blockSize);
 
