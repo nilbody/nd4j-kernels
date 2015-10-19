@@ -20,6 +20,7 @@ template<> __device__ double postProcess<double>(double reduction,int n,int xOff
 }
 
 
+extern "C"
 __global__ void norm1_strided_double(	int n
 		,double *dx
 		,int *xVectorInfo
@@ -53,6 +54,7 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 }
 
 
+extern "C"
 __global__ void norm1_strided_float(	int n
 		,float *dx
 		,int *xVectorInfo

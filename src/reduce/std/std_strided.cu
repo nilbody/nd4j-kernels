@@ -52,7 +52,7 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 
 
 
-
+extern "C"
 __global__ void std_strided_double(	int n
 		,double *dx
 		,int *xVectorInfo
@@ -67,6 +67,7 @@ __global__ void std_strided_double(	int n
 
 
 
+extern "C"
 __global__ void std_strided_float(	int n
 		,float *dx
 		,int *xVectorInfo

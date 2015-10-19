@@ -40,6 +40,7 @@ template <>  __device__ float postProcess<float>(float reduction,int n,int xOffs
 	return reduction;
 }
 
+extern "C"
 __global__ void max_strided_double(
 		int n
 		,double *dx
@@ -53,7 +54,7 @@ __global__ void max_strided_double(
 }
 
 
-
+extern "C"
 __global__ void max_strided_float(
 		int n
 		,float *dx
