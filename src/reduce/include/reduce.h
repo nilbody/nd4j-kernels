@@ -1,7 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sharedmem.h>
+#include "sharedmem.h"
 
 
 
@@ -62,23 +62,25 @@ __global__ void doReduce(
 		,int xOffset,
 		T *result,
 		int resultOffset) {
+
+	printf("In do reduce calling start %d\n",resultOffset);
+
 	T sum = extraParams[0];
 	SharedMemory<T> val;
 	T *sPartials = val.getPointer();
 	int tid = threadIdx.x;
 	int totalThreads = gridDim.x * blockDim.x;
 	int start = blockDim.x * blockIdx.x + tid;
-
-	for ( int i = start; i < n; i += totalThreads) {
+	for (int i = start; i < n; i += totalThreads) {
 		int currIdx = xOffset + i * incx;
 		T curr = dx[currIdx];
 		sum = update(sum,op(curr,extraParams),extraParams);
-
-
 	}
 
 	sPartials[tid] = sum;
+	printf("Gave result for thread id %d as %f\n",tid,sum);
 	__syncthreads();
+	printf("Gave result for thread id %d as %f\n",tid,sum);
 
 	// start the shared memory loop on the next power of 2 less
 	// than the block size.  If block size is not a power of 2,
@@ -103,6 +105,7 @@ __global__ void doReduce(
 	}
 
 	if (tid == 0) {
+		printf("Setting result %d for tid %d and starting offset was %d\n",resultOffset,tid,start);
 		result[resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
 	}
 }
@@ -145,12 +148,8 @@ __device__ void transform(
 	 * Gpu information for the problem
 	 */
 	int tid = threadIdx.x;
-	if(tid >= n)
-		return;
 	int totalThreads = gridDim.x * blockDim.x;
 	int start = blockDim.x * blockIdx.x + tid;
-	if(start >= n)
-		return;
 
 
 	/**
@@ -238,7 +237,19 @@ __device__ void transform(
 		int vectorStride = resultElementWiseStride * elementsPerVector;
 
 		for(int i = 0; i < numberOfVectors; i++) {
-			doReduce<<<blockSize,gridSize,sharedMemorySize>>>(
+			int startOffset = xOffset + i * vectorStride;
+			printf("Offset at %d is %d with vector offset %d and elements per vector %d \n",i,startOffset,vectorStride,elementsPerVector);
+			/**
+			 * 	T *dx
+		,T *extraParams
+		,int n
+		,int incx
+		,int xOffset,
+		T *result,
+		int resultOffset
+			 */
+
+			doReduce<<<1,1,sharedMemorySize>>>(
 					dx
 					,extraParams
 					,elementsPerVector
@@ -248,11 +259,10 @@ __device__ void transform(
 					,resultOffset + i
 			);
 
+
 		}
 
 
-
-		cudaDeviceSynchronize();
 
 
 	}
