@@ -1,6 +1,6 @@
 #include <scalar.h>
 
-__device__ double op(double d1,double d2,double *params) {
+template<> __device__ double op<double>(double d1,double d2,double *params) {
 	if(d1 < d2)
 		return d2;
 	return d1;
@@ -12,11 +12,12 @@ __global__ void max_scalar_double(int n, int idx,double dx,double *dy,int incy,d
 }
 
 
-__device__ float op(float d1,float d2,float *params) {
+template<> __device__ float op<float>(float d1,float d2,float *params) {
 	if(d1 < d2)
 		return d2;
 	return d1;
 }
+
 
 extern "C"
 __global__ void max_scalar_float(int n, int idx,float dx,float *dy,int incy,float *params,float *result,int blockSize) {

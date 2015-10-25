@@ -1,9 +1,9 @@
 #include <pairwise_transform.h>
 
-__device__ double op(double d1,double d2,double *params) {
+template<> __device__ double op<double>(double d1,double d2,double *params) {
    return d1 / d2;
 }
-__device__ double op(double d1,double *params) {
+template <> __device__ double op<double>(double d1,double *params) {
    return d1;
 }
 
@@ -13,12 +13,14 @@ __global__ void div_strided_double(int n,int xOffset,int yOffset, double *dx, do
 }
 
 
-__device__ float op(float d1,float d2,float *params) {
+template <> __device__ float op<float>(float d1,float d2,float *params) {
    return d1 / d2;
 }
-__device__ float op(float d1,float *params) {
+
+template <>__device__ float op<float>(float d1,float *params) {
    return d1;
 }
+
 
 extern "C"
 __global__ void div_strided_float(int n,int xOffset,int yOffset, float *dx, float *dy,int incx,int incy,float *params,float *result,int incz,int blockSize) {

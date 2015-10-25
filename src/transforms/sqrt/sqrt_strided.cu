@@ -1,6 +1,6 @@
 #include <transform.h>
 
-__device__ double op(double d1,double *params) {
+template<> __device__ double op<double>(double d1,double *params) {
 	return sqrt(d1);
 }
 
@@ -10,7 +10,7 @@ __global__ void sqrt_strided_double(int n,int idx,double *dy,int incy,double *pa
 
 }
 
-__device__ float op(float d1,float *params) {
+template<> __device__ float op<float>(float d1,float *params) {
 	return sqrtf(d1);
 }
 

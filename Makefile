@@ -15,4 +15,7 @@ default: all
 clean: 
 	$(shell rm -rf output/*)
 
+install:
+    $(shell rm -rf /tmp/kernels && mkdir /tmp/kernels && cp -rf output/* /tmp/kernels)
+
 nd4j-kernels: all

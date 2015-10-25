@@ -1,6 +1,6 @@
 #include <scalar.h>
 //scalar and current element
-__device__ double op(double d1,double d2,double *params) {
+template<> __device__ double op<double>(double d1,double d2,double *params) {
    return d1 / d2;
 }
 
@@ -10,7 +10,7 @@ __global__ void rdiv_scalar_double(int n, int idx,double dx,double *dy,int incy,
  }
 
 
-__device__ float op(float d1,float d2,float *params) {
+template<> __device__ float op<float>(float d1,float d2,float *params) {
    return d1 / d2;
 }
 

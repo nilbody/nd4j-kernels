@@ -1,9 +1,10 @@
 #include <transform.h>
 
 
-__device__ double op(double d1,double *params) {
+template<> __device__ double op<double>(double d1,double *params) {
         return cos(d1);
 }
+
 
 extern "C"
 __global__ void cos_strided_double(int n,int idx,double *dy,int incy,double *params,double *result,int blockSize) {
@@ -12,9 +13,10 @@ __global__ void cos_strided_double(int n,int idx,double *dy,int incy,double *par
  }
 
 
-__device__ float op(float d1,float *params) {
+template<> __device__ float op<float>(float d1,float *params) {
         return cosf(d1);
 }
+
 
 extern "C"
 __global__ void cos_strided_float(int n,int idx,float *dy,int incy,float *params,float *result,int blockSize) {

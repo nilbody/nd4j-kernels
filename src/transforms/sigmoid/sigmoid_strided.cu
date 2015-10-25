@@ -1,9 +1,10 @@
 #include <transform.h>
 
 
-__device__ double op(double d1,double *params) {
+template<> __device__ double op<double>(double d1,double *params) {
 	return 1.0 / (1.0 + exp(-d1));
 }
+
 
 extern "C"
 __global__ void sigmoid_strided_double(int n,int idx,double *dy,int incy,double *params,double *result,int blockSize) {
@@ -11,7 +12,7 @@ __global__ void sigmoid_strided_double(int n,int idx,double *dy,int incy,double 
 
 }
 
-__device__ float op(float d1,float *params) {
+template<> __device__ float op<float>(float d1,float *params) {
 	return 1.0 / (1.0 + expf(-d1));
 }
 
