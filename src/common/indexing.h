@@ -51,6 +51,8 @@ typedef struct {
  */
 __device__ CurrentIndexing* currentIndex(int N,int offset,int stride) {
 	int numElementsPerThread = N / (gridDim.x * blockDim.x);
+	if(numElementsPerThread < 1)
+		numElementsPerThread = 1;
 	int blockStartingIndex = numElementsPerThread * blockIdx.x * blockDim.x;
 	int startingThreadIndex = blockStartingIndex
 			+ (threadIdx.x / stride) * numElementsPerThread * stride

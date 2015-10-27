@@ -19,19 +19,6 @@ typedef struct {
 	int offset;
 	int elementWiseStride;
 } ShapeInformation;
-
-
-__device__ __host__ ShapeInformation *sliceOfShape(ShapeInformation *sliceOf) {
-	ShapeInformation *ret = (ShapeInformation *) malloc(sizeof(ShapeInformation));
-	ret->rank = sliceOf->rank - 1;
-	ret->shape = (int *) malloc(sizeof(int) * (ret->rank - 1));
-	ret->stride = (int *) malloc(sizeof(int) * (ret->rank - 1));
-    ret->offset = sliceOf->offset;
-    ret->order = sliceOf->order;
-    ret->elementWiseStride = sliceOf->elementWiseStride;
-	return ret;
-}
-
 /**
  * @param toCopy the shape to copy
  * @return a copy of the original struct
@@ -484,8 +471,16 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	int tensorLength = length;
 	//__device__ int lengthPerSlice(int rank,int *shape,int *dimension) {
 	int offset = index * tensorLength / lengthPerSlice(ret2Rank,ret2,zeroDimension,1);
+
+
+	/**
+	 * Need to do slice(offset) here
+	 */
 	if(sliceIdx == 0 && length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
-		return offset;
+		/**
+		 * NOTE STRIDE[1] HERE. WE DO THIS TO AVOID CREATING A NEW SLICE OBJECT.
+		 */
+		return info->offset + offset  * info->stride[1];
 	}
 
 	//determine offset here
@@ -494,11 +489,10 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	if(length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
 		retOffset = offset;
 		offset -= ret2[0] * (offset / ret2[0]);
-		int *oldRet2 = ret2;
 		//set offset here
 		ret2 = slice(ret2,ret2Rank);
 		ret2Rank--;
-		return retOffset;
+		return info->offset + retOffset * info->stride[1];
 	}
 
 
