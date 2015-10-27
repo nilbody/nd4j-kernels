@@ -16,14 +16,3 @@ template <> __device__ float op<float>(float d1,float *params) {
 }
 
 
-extern "C"
-__global__ void add_strided_double(int n,int xOffset,int yOffset, double *dx, double *dy,int incx,int incy,double *params,double *result,int incz,int blockSize) {
-	transform<double>(n,xOffset,yOffset,dx,dy,incx,incy,params,result,incz,blockSize);
-}
-
-extern "C"
-__global__ void add_strided_float(int n,int xOffset,int yOffset, float *dx, float *dy,int incx,int incy,float *params,float *result,int incz,int blockSize) {
-	transform<float>(n,xOffset,yOffset,dx,dy,incx,incy,params,result,incz,blockSize);
-}
-
-

@@ -19,6 +19,19 @@ typedef struct {
 	int offset;
 	int elementWiseStride;
 } ShapeInformation;
+
+
+__device__ __host__ ShapeInformation *sliceOfShape(ShapeInformation *sliceOf) {
+	ShapeInformation *ret = (ShapeInformation *) malloc(sizeof(ShapeInformation));
+	ret->rank = sliceOf->rank - 1;
+	ret->shape = (int *) malloc(sizeof(int) * (ret->rank - 1));
+	ret->stride = (int *) malloc(sizeof(int) * (ret->rank - 1));
+    ret->offset = sliceOf->offset;
+    ret->order = sliceOf->order;
+    ret->elementWiseStride = sliceOf->elementWiseStride;
+	return ret;
+}
+
 /**
  * @param toCopy the shape to copy
  * @return a copy of the original struct
@@ -67,8 +80,8 @@ __device__ __host__ int prod(int *data,int length) {
  *
  * item
  */
-__device__ __host__ int*  removeIndex(int *data,int *indexes,int dataLength,int indexesLength) {
-	int *ret = (int *) malloc((dataLength - indexesLength) * sizeof(int));
+__device__ __host__ void  removeIndex(int *data,int *indexes,int dataLength,int indexesLength,int **out) {
+	int *ret = (int *) *out;
 	int count = 0;
 	for(int i = 0; i < dataLength; i++) {
 		int contains = 0;
@@ -79,12 +92,12 @@ __device__ __host__ int*  removeIndex(int *data,int *indexes,int dataLength,int 
 			}
 		}
 
-		if(!contains)
-			ret[count++] = data[i];
+		if(!contains) {
+			int currI = data[i];
+			ret[count] = currI;
+			count++;
+		}
 	}
-
-
-	return ret;
 }
 
 /**
@@ -154,7 +167,7 @@ __device__ __host__ int* range(int from,int to) {
  * in the data
  */
 __device__ __host__ int* keep(int *data,int *index,int indexLength,int dataLength) {
-	int *ret = (int *) malloc((dataLength - indexLength) * sizeof(int));
+	int *ret = (int *) malloc((indexLength) * sizeof(int));
 	int count = 0;
 	for(int i = 0; i < dataLength; i++) {
 		int contains = 0;
@@ -284,7 +297,8 @@ __device__ __host__ int* concat(int  numArrays,int numTotalElements,int **arr,in
 
 
 __device__ __host__ int lengthPerSlice(int rank,int *shape,int *dimension,int dimensionLength) {
-	int *ret2 = removeIndex(shape,dimension,rank,dimensionLength);
+	int *ret2 = (int *) malloc((rank - dimensionLength) * sizeof(int));
+	removeIndex(shape,dimension,rank,dimensionLength,&ret2);
 	int length = rank - dimensionLength;
 	int ret = prod(ret2,length);
 	free(ret2);
@@ -363,7 +377,6 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 		info->stride[i] = buffer[startOffset + i + rank];
 	}
 
-	free(buffer);
 	return info;
 }
 
@@ -389,7 +402,7 @@ __device__ __host__ int tensorsAlongDimension(int rank,int length,int *shape,int
 __device__ __host__ int isVector(int *shape,int rank) {
 	if(rank > 2)
 		return 0;
-	else if(rank == 2) {
+	else if(rank <= 2) {
 		if(shape[0] == 1 || shape[1] == 1)
 			return 1;
 	}
@@ -427,7 +440,8 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 
 	int  *reverseDimensions = reverseCopy(dimension,dimensionLength);
 	int *rangeRet = range(0, rank);
-	int  *remove = removeIndex(rangeRet, dimension,rank,dimensionLength);
+	int *remove = (int *) malloc((rank - dimensionLength) * sizeof(int));
+	removeIndex(rangeRet, dimension,rank,dimensionLength,&remove);
 
 	int *zeroDimension = (int *) malloc(1 * sizeof(int));
 	zeroDimension[0] = 0;
@@ -480,6 +494,7 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	if(length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
 		retOffset = offset;
 		offset -= ret2[0] * (offset / ret2[0]);
+		int *oldRet2 = ret2;
 		//set offset here
 		ret2 = slice(ret2,ret2Rank);
 		ret2Rank--;
@@ -503,11 +518,13 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 
 	}
 
+	/*
 	free(pointers);
 	free(ret2);
 	free(reverseDimensions);
 	free(rangeRet);
 	free(remove);
+	 */
 
 	//free the new pointer
 	if(rank <= 2) {
