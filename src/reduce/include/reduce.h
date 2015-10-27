@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "sharedmem.h"
-#include "tad.h"
-#include "indexing.h"
+#include <tad.h>
+#include <indexing.h>
 
 
 //an op for the kernel
@@ -194,7 +194,7 @@ __device__ void transform(
 			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
 		}
 		result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-
+        printf("Result for block %d is %f\n",blockIdx.x,currrResult);
 
 	}
 
