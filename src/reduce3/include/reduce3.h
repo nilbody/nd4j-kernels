@@ -189,7 +189,7 @@ __device__ void transform(
 }
 
 extern "C"
-__global__ void transform_pair_double(
+__global__ void transform_double(
 		int n
 		,double *dx
 		,int *xShapeInfo,
@@ -218,7 +218,7 @@ __global__ void transform_pair_double(
 
 
 extern "C"
-__global__ void transform_pair_float(
+__global__ void transform_float(
 		int n
 		,float *dx
 		,int *xShapeInfo,
