@@ -225,7 +225,7 @@ __global__ void transform_double(
 
 
 extern "C"
-__global__ void transform__float(
+__global__ void transform_float(
 		int n
 		,float *dx
 		,int *xShapeInfo,
