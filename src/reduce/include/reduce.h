@@ -161,18 +161,15 @@ __device__ void transform(
 	__syncthreads();
 	//init the tad off
 
-	__shared__ int *keepShape;
-	if(tid == 0)
-		keepShape = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
-	__syncthreads();
 
 
 
 	__shared__ int xLength;
-	__shared__ int tensorsAlongDimension2;
 	if(tid == 0) {
-		xLength = prod(xInfo->shape,xInfo->rank);
-		tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
+		//__device__ __host__ int* keep(int *data,int *index,int indexLength,int dataLength) {
+		int *keep2 = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
+		xLength = prod(keep2,dimensionLength);
+		free(keep2);
 	}
 
 	__syncthreads();
@@ -196,12 +193,11 @@ __device__ void transform(
 		for(int i = 0; i < xLength; i++) {
 			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
 		}
+		result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+
 
 	}
 
-	if (tid == 0) {
-		result[blockIdx.x] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-	}
 
 	free(xInfoCopy);
 	free(resultInfoCopy);

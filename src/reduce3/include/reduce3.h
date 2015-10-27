@@ -151,7 +151,14 @@ __device__ void transform(
 
 
 	//of note here: the tad dimensions should be the same for doing reductions across pair wise tensors
-	int xLength = prod(xInfo->shape,xInfo->rank);
+	__shared__ int xLength;
+	if(tid == 0) {
+		//__device__ __host__ int* keep(int *data,int *index,int indexLength,int dataLength) {
+		int *keep2 = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
+		xLength = prod(keep2,dimensionLength);
+		free(keep2);
+	}
+
 	int tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
 	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
 	ShapeInformation *yInfoCopy = shapeCopy(yInfo);
@@ -218,7 +225,7 @@ __global__ void transform_double(
 
 
 extern "C"
-__global__ void transform_float(
+__global__ void transform__float(
 		int n
 		,float *dx
 		,int *xShapeInfo,
