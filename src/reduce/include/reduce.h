@@ -1,7 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <>sharedmem.h>
+#include <sharedmem.h>
 #include <tad.h>
 #include <indexing.h>
 
@@ -188,11 +188,23 @@ __device__ void transform(
 	sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
 	__syncthreads();
 	if(tid == 0) {
-		T currResult = extraParams[0];
-		for(int i = 0; i < xLength; i++) {
-			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
+		if(offset == 0 && isScalar(resultInfo)) {
+			T currResult = extraParams[0];
+			int totalLength = prod(xInfo->shape,xInfo->rank);
+			for(int i = 0; i < totalLength; i++) {
+				currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
+			}
+			result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+
 		}
-		result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+		else {
+			T currResult = extraParams[0];
+			for(int i = 0; i < xLength; i++) {
+				currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
+			}
+			result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+
+		}
 
 	}
 

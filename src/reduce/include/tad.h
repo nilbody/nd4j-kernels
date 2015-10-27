@@ -19,17 +19,6 @@ typedef struct {
 	int offset;
 	int elementWiseStride;
 } ShapeInformation;
-
-
-__device__ __host__ int isScalar(ShapeInformation *info) {
-	if(info->rank > 2)
-		return 0;
-	else if(info->rank == 2) {
-		return info->shape[0] == 1 && info->shape[1] == 1;
-	}
-	return 0;
-}
-
 /**
  * @param toCopy the shape to copy
  * @return a copy of the original struct

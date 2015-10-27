@@ -178,10 +178,24 @@ __device__ void transform(
 	sPartialsY[tid] = dy[offset4 + tid * yInfoCopy->elementWiseStride];
 	__syncthreads();
 	if(tid == 0) {
-		T currResult = extraParams[0];
-		for(int i = 0; i < xLength; i++) {
-			currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
+		if(offset == 0 && isScalar(resultInfo)) {
+			T currResult = extraParams[0];
+			int totalLength = prod(xInfo->shape,xInfo->rank);
+			for(int i = 0; i < totalLength; i++) {
+				currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
+			}
+			printf("Result is %f\n",currResult);
+			result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+
 		}
+		else {
+			T currResult = extraParams[0];
+			for(int i = 0; i < xLength; i++) {
+				currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
+			}
+
+		}
+
 
 		result[blockIdx.x] = postProcess(sPartials[0],n,offset3,dx,xInfoCopy->elementWiseStride,extraParams,result);
 
