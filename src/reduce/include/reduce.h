@@ -1,7 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "sharedmem.h"
+#include <>sharedmem.h>
 #include <tad.h>
 #include <indexing.h>
 
@@ -97,7 +97,6 @@ __global__ void doReduce(
 	int resultOffset = start + blockIdx.x * resultInfo->elementWiseStride;
 	T sum = doBlock(n,sPartials,dx,xOffset,incx,extraParams);
 	sPartials[tid] = sum;
-	printf("Assigned %d as %f\n",tid,sum);
 	__syncthreads();
 	aggregatePartials(&sPartials,tid,extraParams);
 	if (tid == 0) {
@@ -185,8 +184,8 @@ __device__ void transform(
 	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
 
 
-	int offset3 = offset(blockIdx.x,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
-	sPartials[tid] = dx[offset3 + tid];
+	int offset3 = offset(blockIdx.x ,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
+	sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
 	__syncthreads();
 	if(tid == 0) {
 		T currResult = extraParams[0];
@@ -194,7 +193,6 @@ __device__ void transform(
 			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
 		}
 		result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-        printf("Result for block %d is %f\n",blockIdx.x,currrResult);
 
 	}
 

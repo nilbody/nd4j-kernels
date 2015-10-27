@@ -174,8 +174,8 @@ __device__ void transform(
 	int offset3 = offset(blockIdx.x,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
 	int offset4 = offset(blockIdx.x,yInfoCopy->rank,yInfoCopy,dimension,dimensionLength);
 
-	sPartials[tid] = dx[offset3 + tid];
-	sPartialsY[tid] = dy[offset4 + tid];
+	sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
+	sPartialsY[tid] = dy[offset4 + tid * yInfoCopy->elementWiseStride];
 	__syncthreads();
 	if(tid == 0) {
 		T currResult = extraParams[0];
