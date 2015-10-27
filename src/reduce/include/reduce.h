@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "sharedmem.h"
 #include "tad.h"
+#include "indexing.h"
 
 
 //an op for the kernel
@@ -42,11 +43,7 @@ template <> float postProcess<float>(float reduction,int n,int xOffset,float *dx
 template<typename T>
 __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParams) {
 	T sum = extraParams[0];
-
-	int tid = threadIdx.x;
-	int totalThreads = gridDim.x * blockDim.x;
-	int start = blockDim.x * blockIdx.x + tid;
-	for (int i = start; i < n; i += totalThreads) {
+	for (int i = 0; i < n; i ++) {
 		int currIdx = xOffset + i * incx;
 		T curr = dx[currIdx];
 		sum = update(sum,op(curr,extraParams),extraParams);
@@ -57,10 +54,11 @@ __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParam
 
 
 template<typename T>
-__device__ void aggregatePartials(T *sPartials,int tid,T *extraParams) {
+__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
 	// start the shared memory loop on the next power of 2 less
 	// than the block size.  If block size is not a power of 2,
 	// accumulate the intermediate sums in the remainder range.
+	T *sPartials = *sPartialsRef;
 	int floorPow2 = blockDim.x;
 
 	if (floorPow2 & (floorPow2 - 1)) {
@@ -87,21 +85,23 @@ __global__ void doReduce(
 		T *dx
 		,T *extraParams
 		,int n
-		,int incx
-		,int xOffset,
+		,ShapeInformation *xInfo,
 		T *result,
-		int resultOffset) {
+		ShapeInformation *resultInfo) {
 	SharedMemory<T> val;
 	T *sPartials = val.getPointer();
 	int tid = threadIdx.x;
-
+	int start = blockDim.x * blockIdx.x + tid;
+	int xOffset = start + xInfo->offset;
+	int incx = xInfo->elementWiseStride;
+	int resultOffset = start + blockIdx.x * resultInfo->elementWiseStride;
 	T sum = doBlock(n,sPartials,dx,xOffset,incx,extraParams);
 	sPartials[tid] = sum;
+	printf("Assigned %d as %f\n",tid,sum);
 	__syncthreads();
-	aggregatePartials(sPartials,tid,extraParams);
-
+	aggregatePartials(&sPartials,tid,extraParams);
 	if (tid == 0) {
-		result[resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
+		result[start + resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
 	}
 }
 
@@ -139,16 +139,17 @@ __device__ void transform(
 		int dimensionLength) {
 
 
-	//shared shape information for a given block
-	__shared__ ShapeInformation *xInfo;
-	__shared__ ShapeInformation *resultInfo;
-
 	/**
 	 * Gpu information for the problem
 	 */
 	int tid = threadIdx.x;
-	int totalThreads = gridDim.x * blockDim.x;
-	int start = blockDim.x * blockIdx.x + tid;
+
+
+	//shared shape information for a given block
+	__shared__ ShapeInformation *xInfo;
+	__shared__ ShapeInformation *resultInfo;
+
+
 
 	//setup the shared shape information
 	if(tid == 0)  {
@@ -158,89 +159,52 @@ __device__ void transform(
 	}
 
 	__syncthreads();
+	//init the tad off
+
+	__shared__ int *keepShape;
+	if(tid == 0)
+		keepShape = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
+	__syncthreads();
 
 
 
-
-	int xLength = prod(xInfo->shape,xInfo->rank);
-	int tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
-
-
-
-	/**
-	 * Kernel function invocation
-	 * information
-	 */
-	int sharedMemorySize = gpuInformation[2];
-
-	//do the problem in line
-	if(tensorsAlongDimension2 == 1 || isVector(xInfo->shape,xInfo->rank)) {
-		int resultOffset = resultInfo->offset;
-		//the overall result
-		T sum = extraParams[0];
-		//shared memory space for storing intermediate results
-		SharedMemory<T> val;
-		T *sPartials = val.getPointer();
-		//actual reduction loop
-		for (int i = start; i < n; i += totalThreads) {
-			T curr = dx[i * xInfo->elementWiseStride];
-			sum = update(sum,op(curr,extraParams),extraParams);
-		}
-
-		//result for the block
-		sPartials[tid] = sum;
-		__syncthreads();
-		aggregatePartials(sPartials,tid,extraParams);
-		if (tid == 0) {
-			result[resultOffset] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-		}
+	__shared__ int xLength;
+	__shared__ int tensorsAlongDimension2;
+	if(tid == 0) {
+		xLength = prod(xInfo->shape,xInfo->rank);
+		tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
 	}
-	else {
 
-		int *tadShape = removeIndex(xInfo->shape,dimension,xInfo->rank,dimensionLength);
-		if(xInfo->rank - dimensionLength < 2) {
-			int *newShape = ensureVectorShape(tadShape,dimension[0]);
-			free(tadShape);
-			tadShape = newShape;
+	__syncthreads();
+
+
+
+
+	//shared memory space for storing intermediate results
+	SharedMemory<T> val;
+	T *sPartials = val.getPointer();
+
+	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
+	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
+
+
+	int offset3 = offset(blockIdx.x,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
+	sPartials[tid] = dx[offset3 + tid];
+	__syncthreads();
+	if(tid == 0) {
+		T currResult = extraParams[0];
+		for(int i = 0; i < xLength; i++) {
+			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
 		}
-
-
-		int *keepShape = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
-
-
-
-		int elementsPerVector = prod(tadShape,xInfo->rank - dimensionLength);
-		int numElementsToUse = isVector(tadShape,xInfo->rank - dimensionLength) ? n : prod(keepShape,dimensionLength);
-		free(keepShape);
-		//launch a kernel per tensor along dimension
-		for(int i = 0; i < tensorsAlongDimension2; i++) {
-			ShapeInformation *xInfoCopy = shapeCopy(xInfo);
-			ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
-			int resultCopyRank = resultInfo->rank;
-			int startOffset = offset(i,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
-			int resultOffset = offset(i,resultCopyRank,resultInfo,dimension,dimensionLength);
-			int elementWiseStride = xInfoCopy->elementWiseStride;
-			doReduce<<<1,1,sharedMemorySize>>>(
-					dx
-					,extraParams
-					,numElementsToUse
-					,elementWiseStride
-					,startOffset
-					,result
-					,resultOffset
-			);
-
-			//only free it if it hasn't already been freed
-			if(xInfo->rank - dimensionLength < 2)
-				free(tadShape);
-			free(xInfoCopy);
-			free(resultInfoCopy);
-		}
-
-		cudaDeviceSynchronize();
-
 
 	}
+
+	if (tid == 0) {
+		result[blockIdx.x] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+	}
+
+	free(xInfoCopy);
+	free(resultInfoCopy);
 
 }
 

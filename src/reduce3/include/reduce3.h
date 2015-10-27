@@ -115,7 +115,7 @@ Perform a reduction
 @param result where to store the result of the reduction
  */
 template<typename T>
-__device__ void transform_pair(
+__device__ void transform(
 		int n
 		,T *dx
 		,int *xShapeInfo,
@@ -153,84 +153,43 @@ __device__ void transform_pair(
 	//of note here: the tad dimensions should be the same for doing reductions across pair wise tensors
 	int xLength = prod(xInfo->shape,xInfo->rank);
 	int tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
+	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
+	ShapeInformation *yInfoCopy = shapeCopy(yInfo);
+	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
+
+	//shared memory space for storing intermediate results
+	SharedMemory<T> val;
+	T *sPartials = val.getPointer();
+	SharedMemory<T> val2;
+	T *sPartialsY = val2.getPointer();
 
 
+	int offset3 = offset(blockIdx.x,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
+	int offset4 = offset(blockIdx.x,yInfoCopy->rank,yInfoCopy,dimension,dimensionLength);
 
-	/**
-	 * Kernel function invocation
-	 * information
-	 */
-	int sharedMemorySize = gpuInformation[2];
-
-	//do the problem in line
-	if(tensorsAlongDimension2 == 1 || isVector(xInfo->shape,xInfo->rank)) {
-		int resultOffset = resultInfo->offset;
-		//the overall result
-		//shared memory space for storing intermediate results
-		SharedMemory<T> val;
-		T *sPartials = val.getPointer();
-		T reduce = doBlock(n,sPartials,dx,xInfo->offset,xInfo->elementWiseStride,dy,yInfo->offset,yInfo->elementWiseStride,extraParams);
-		//result for the block
-		sPartials[tid] = reduce;
-		__syncthreads();
-		aggregatePartials(sPartials,tid,extraParams);
-		if (tid == 0) {
-			result[resultOffset] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-		}
-	}
-	else {
-
-		int *tadShape = removeIndex(xInfo->shape,dimension,xInfo->rank,dimensionLength);
-		if(xInfo->rank - dimensionLength < 2) {
-			int *newShape = ensureVectorShape(tadShape,dimension[0]);
-			free(tadShape);
-			tadShape = newShape;
+	sPartials[tid] = dx[offset3 + tid];
+	sPartialsY[tid] = dy[offset4 + tid];
+	__syncthreads();
+	if(tid == 0) {
+		T currResult = extraParams[0];
+		for(int i = 0; i < xLength; i++) {
+			currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
 		}
 
-
-		int *keepShape = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
-
-		int elementsPerVector = prod(tadShape,xInfo->rank - dimensionLength);
-		int numElementsToUse = isVector(tadShape,xInfo->rank - dimensionLength) ? n : prod(keepShape,dimensionLength);
-		free(keepShape);
-		//launch a kernel per tensor along dimension
-		for(int i = 0; i < tensorsAlongDimension2; i++) {
-			ShapeInformation *xInfoCopy = shapeCopy(xInfo);
-			ShapeInformation *yInfoCopy = shapeCopy(yInfo);
-			ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
-
-			int startOffset = offset(i,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
-			int yOffset = offset(i,yInfoCopy->rank,yInfoCopy,dimension,dimensionLength);
-			int resultOffset = offset(i,resultInfo->rank,resultInfo,dimension,dimensionLength);
-
-			doReduce<<<1,1,sharedMemorySize>>>(
-					dx,
-					extraParams,
-					numElementsToUse,
-					xInfoCopy->elementWiseStride,
-					startOffset,
-					dy,
-					yInfoCopy->elementWiseStride,
-					yOffset,
-					result,
-					resultOffset
-			);
-
-			//only free it if it hasn't already been freed
-			if(xInfo->rank - dimensionLength < 2)
-				free(tadShape);
-			free(xInfoCopy);
-			free(resultInfoCopy);
-		}
-
-		cudaDeviceSynchronize();
+		result[blockIdx.x] = postProcess(sPartials[0],n,offset3,dx,xInfoCopy->elementWiseStride,extraParams,result);
 
 
 	}
+
+
+	free(xInfoCopy);
+	free(yInfoCopy);
+	free(resultInfoCopy);
+
 }
 
 extern "C"
-__global__ void transform_double(
+__global__ void transform_pair_double(
 		int n
 		,double *dx
 		,int *xShapeInfo,
@@ -242,7 +201,7 @@ __global__ void transform_double(
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength) {
-	transform_pair<double>(
+	transform<double>(
 			n,
 			dx,
 			xShapeInfo,
@@ -259,7 +218,7 @@ __global__ void transform_double(
 
 
 extern "C"
-__global__ void transform_float(
+__global__ void transform_pair_float(
 		int n
 		,float *dx
 		,int *xShapeInfo,
@@ -271,7 +230,7 @@ __global__ void transform_float(
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength) {
-	transform_pair<float>(
+	transform<float>(
 			n,
 			dx,
 			xShapeInfo,
