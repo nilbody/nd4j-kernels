@@ -434,7 +434,6 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	zeroDimension[0] = 0;
 
 	int removeLength = rank - dimensionLength;
-	free(rangeRet);
 	int **pointers = (int **)malloc(2 * sizeof(int *));
 	pointers[0] = remove;
 	pointers[1] = reverseDimensions;
@@ -446,7 +445,6 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	int *newPermuteDims = concat(2,removeLength + dimensionLength,pointers,lengths);
 	//__device__ void permute(ShapeInformation *info,int *rearrange,int rank) {
 	permute(&info,newPermuteDims,rank);
-
 
 	int *permuted = info->shape;
 	int *permutedStrides = info->stride;
@@ -471,8 +469,6 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 	int tensorLength = length;
 	//__device__ int lengthPerSlice(int rank,int *shape,int *dimension) {
 	int offset = index * tensorLength / lengthPerSlice(ret2Rank,ret2,zeroDimension,1);
-
-
 	/**
 	 * Need to do slice(offset) here
 	 */
@@ -480,45 +476,46 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 		/**
 		 * NOTE STRIDE[1] HERE. WE DO THIS TO AVOID CREATING A NEW SLICE OBJECT.
 		 */
-		return info->offset + offset  * info->stride[1];
+		retOffset = info->offset + offset  * info->stride[1];
 	}
 
 	//determine offset here
 	//note here offset doesn't change, just the shape
 	//of the tad
-	if(length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
+	else if(length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
 		retOffset = offset;
 		offset -= ret2[0] * (offset / ret2[0]);
 		//set offset here
 		ret2 = slice(ret2,ret2Rank);
 		ret2Rank--;
-		return info->offset + retOffset * info->stride[1];
+		retOffset = info->offset + retOffset * info->stride[1];
 	}
 
 
+	else {
+		while(ret2Length > length) {
+			sliceIdx = sliceOffsetForTensor(rank,index, ret2, tensorShape,tensorShapeLength,zeroDimension,1);
+			sliceIdx -= ret2[0] * (sliceIdx / ret2[0]);
+			int *oldRet2 = ret2;
+			//set offset
+			ret2 = slice(info->shape,ret2Rank);
+			free(oldRet2);
+			ret2Rank--;
+			//slice wise offsets are offset + i * majorStride()
+			//dividing by the slice index will adjust the offset by a factor of sliceIndex
+			retOffset /= sliceIdx;
+			length -= prod(ret2,ret2Rank);
 
-	while(ret2Length > length) {
-		sliceIdx = sliceOffsetForTensor(rank,index, ret2, tensorShape,tensorShapeLength,zeroDimension,1);
-		sliceIdx -= ret2[0] * (sliceIdx / ret2[0]);
-		int *oldRet2 = ret2;
-		//set offset
-		ret2 = slice(info->shape,ret2Rank);
-		free(oldRet2);
-		ret2Rank--;
-		//slice wise offsets are offset + i * majorStride()
-		//dividing by the slice index will adjust the offset by a factor of sliceIndex
-		retOffset /= sliceIdx;
-		length -= prod(ret2,ret2Rank);
-
+		}
 	}
-
-	/*
+/*
 	free(pointers);
 	free(ret2);
+	*/
 	free(reverseDimensions);
 	free(rangeRet);
 	free(remove);
-	 */
+
 
 	//free the new pointer
 	if(rank <= 2) {
