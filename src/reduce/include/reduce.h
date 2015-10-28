@@ -317,7 +317,6 @@ __device__ void transform(
 
 		// write result for this block to global mem
 		if (tid == 0 && blockIdx.x == 0) {
-			printf("Assigning %f\n", reduction);
 			result[blockIdx.x] = postProcess(reduction,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
 		}
 	}
