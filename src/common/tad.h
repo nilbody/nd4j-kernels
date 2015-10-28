@@ -361,18 +361,21 @@ __device__ __host__ int *slice(int *shape,int rank) {
  */
 __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	ShapeInformation *info = (ShapeInformation *) malloc(sizeof(ShapeInformation));
+	int length = buffer[0] * 2 + 3;
 	int rank = buffer[0];
 
 	//start after rank
-	int startOffset = 1;
 	info->shape = (int *) malloc(sizeof(int) * rank);
 	info->stride = (int *) malloc(sizeof(int) * rank);
 	info->rank = rank;
-	info->offset = buffer[startOffset + 2 * rank];
-	info->elementWiseStride = buffer[startOffset + (2 * rank) + 1];
+	info->offset = buffer[length - 2];
+	info->elementWiseStride = buffer[length - 1];
+	int count = 1;
 	for(int i = 0; i < rank; i++) {
-		info->shape[i] = buffer[startOffset + i];
-		info->stride[i] = buffer[startOffset + i + rank];
+		info->shape[i] = buffer[count++];
+	}
+	for(int i = 0; i < rank; i++) {
+		info->stride[i] = buffer[count++];
 	}
 
 	return info;
@@ -520,14 +523,14 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 
 		}
 	}
-/*
+	/*
 	free(pointers);
 	free(ret2);
-	*/
+	 */
 	free(reverseDimensions);
 	free(rangeRet);
 	free(remove);
-    free(copy);
+	free(copy);
 
 	//free the new pointer
 	if(rank <= 2) {

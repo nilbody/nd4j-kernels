@@ -128,15 +128,21 @@ __device__ void transform(
 		int *dimension,
 		int dimensionLength) {
 
+	__shared__ int nIsPow2;
+	nIsPow2 = (n % 2 == 0);
+	__syncthreads();
+	/**
+	 * Gpu information for the problem
+	 */
+	int tid = threadIdx.x;
+
+
 	//shared shape information for a given block
 	__shared__ ShapeInformation *xInfo;
 	__shared__ ShapeInformation *yInfo;
 	__shared__ ShapeInformation *resultInfo;
 
-	/**
-	 * Gpu information for the problem
-	 */
-	int tid = threadIdx.x;
+
 
 	//setup the shared shape information
 	if(tid == 0)  {
@@ -147,10 +153,11 @@ __device__ void transform(
 	}
 
 	__syncthreads();
+	//init the tad off
 
 
 
-	//of note here: the tad dimensions should be the same for doing reductions across pair wise tensors
+
 	__shared__ int xLength;
 	if(tid == 0) {
 		//__device__ __host__ int* keep(int *data,int *index,int indexLength,int dataLength) {
@@ -159,54 +166,206 @@ __device__ void transform(
 		free(keep2);
 	}
 
-	int tensorsAlongDimension2 = tensorsAlongDimension(xInfo->rank,xLength,xInfo->shape,dimension,dimensionLength);
-	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
-	ShapeInformation *yInfoCopy = shapeCopy(yInfo);
-	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
+	__syncthreads();
+
+
+	__shared__ int resultScalar;
+	resultScalar = isScalar(resultInfo);
+	__syncthreads();
 
 	//shared memory space for storing intermediate results
 	SharedMemory<T> val;
-	T *sPartials = val.getPointer();
-	SharedMemory<T> val2;
-	T *sPartialsY = val2.getPointer();
+	volatile T *sPartials = val.getPointer();
+	SharedMemory<T> valY;
+	volatile T *sYPartials = valY.getPointer();
 
 
-	int offset3 = offset(blockIdx.x,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
-	int offset4 = offset(blockIdx.x,yInfoCopy->rank,yInfoCopy,dimension,dimensionLength);
+	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
+	ShapeInformation *yInfoCopy = shapeCopy(yInfo);
+	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
+	if(!resultScalar) {
+		int offset3 = offset(blockIdx.x ,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
+		int offset4 = offset(blockIdx.x ,yInfoCopy->rank,yInfoCopy,dimension,dimensionLength);
 
-	sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
-	sPartialsY[tid] = dy[offset4 + tid * yInfoCopy->elementWiseStride];
+		sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
+		sYPartials[tid] = dy[offset4 + tid * yInfoCopy->elementWiseStride];
+
+	}
+	else {
+
+		int blockSize = gpuInformation[0];
+
+		// perform first level of reduction,
+		// reading from global memory, writing to shared memory
+		unsigned int tid = threadIdx.x;
+		unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
+		if(i >= n)
+			return;
+
+		unsigned int gridSize = blockSize * 2 * gridDim.x;
+
+		T reduction = extraParams[0];
+		T curr,currY;
+
+		// we reduce multiple elements per thread.  The number is determined by the
+		// number of active thread blocks (via gridDim).  More blocks will result
+		// in a larger gridSize and therefore fewer elements per thread
+		while (i < n)	{
+			curr = dx[i];
+			currY = dy[i];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+
+
+			// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
+			if (nIsPow2 || i + blockSize < n) {
+				curr = dx[i + blockSize];
+				currY = dy[i + blockSize];
+				reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+
+			}
+
+			i += gridSize;
+		}
+
+		// each thread puts its local sum into shared memory
+		sPartials[tid] = reduction;
+		sYPartials[tid] = reduction;
+		__syncthreads();
+
+
+		// do reduction in shared mem
+		if ((blockSize >= 512) && (tid < 256)) {
+			curr = sPartials[tid + 256];
+			currY = sYPartials[tid + 256];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >= 256) &&(tid < 128)) {
+			curr = sPartials[tid + 128];
+			currY = sYPartials[tid + 128];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >= 128) && (tid <  64)) {
+			curr = sPartials[tid + 64];
+			currY = sYPartials[tid + 64];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+#if (__CUDA_ARCH__ >= 300 )
+		if ( tid < 32 ) {
+			// Fetch final intermediate sum from 2nd warp
+			if (blockSize >=  64) {
+				curr = sPartials[tid + 32];
+				currY = sYPartials[tid + 32];
+				reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+				sPartials[tid] = reduction;
+				sYPartials[tid] = reduction;
+
+			}
+			// Reduce final warp using shuffle
+			for (int offset = warpSize/2; offset > 0; offset /= 2) {
+				curr =  __shfl_down(reduction, offset);
+				currY = curr;
+				reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			}
+		}
+#else
+		// fully unroll reduction within a single warp
+		if ((blockSize >=  64) && (tid < 32)) {
+			curr = sPartials[tid + 32];
+			currY = sYPartials[tid + 32];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >=  32) && (tid < 16)) {
+			curr = sPartials[tid + 16];
+			currY = sYPartials[tid + 16];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+
+		}
+
+		__syncthreads();
+
+		if ((blockSize >=  16) && (tid <  8)) {
+			curr = sPartials[tid + 8];
+			currY = sPartials[tid + 8];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >=   8) && (tid <  4)) {
+			curr = sPartials[tid + 4];
+			currY = sYPartials[tid + 4];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >=   4) && (tid <  2)) {
+			curr = sPartials[tid + 2];
+			currY = sYPartials[tid + 2];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+
+		if ((blockSize >=   2) && ( tid <  1)) {
+			curr = sPartials[tid + 1];
+			currY = sYPartials[tid + 1];
+			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+			sPartials[tid] = reduction;
+			sYPartials[tid] = reduction;
+		}
+
+		__syncthreads();
+#endif
+
+		// write result for this block to global mem
+		if (tid == 0)
+			result[blockIdx.x] = postProcess(reduction,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+	}
 	__syncthreads();
 	if(tid == 0) {
-		if(offset == 0 && isScalar(resultInfo)) {
+		if(!resultScalar) {
 			T currResult = extraParams[0];
-			int totalLength = prod(xInfo->shape,xInfo->rank);
-			for(int i = 0; i < totalLength; i++) {
-				currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
+			for(int i = 0; i < xLength; i++) {
+				currResult = update(currResult,op(sPartials[i],sYPartials[i],extraParams),extraParams);
 			}
-			printf("Result is %f\n",currResult);
+
 			result[blockIdx.x] = postProcess(currResult,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
 
 		}
-		else {
-			T currResult = extraParams[0];
-			for(int i = 0; i < xLength; i++) {
-				currResult = update(currResult,op(sPartials[i],sPartialsY[i],extraParams),extraParams);
-			}
-
-		}
-
-
-		result[blockIdx.x] = postProcess(sPartials[0],n,offset3,dx,xInfoCopy->elementWiseStride,extraParams,result);
-
 
 	}
 
 
 	free(xInfoCopy);
-	free(yInfoCopy);
 	free(resultInfoCopy);
-
 }
 
 extern "C"
