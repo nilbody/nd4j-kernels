@@ -183,12 +183,20 @@ __device__ void transform(
 	//shared memory space for storing intermediate results
 	SharedMemory<T> val;
 	volatile T *sPartials = val.getPointer();
+	if(tid == 0) {
+		int sMemSize = gpuInformation[2];
+		int sPartialsLength = sMemSize / sizeof(T);
+		for(int i = 0; i < sPartialsLength; i++) {
+			sPartials[i] = extraParams[0];
+		}
+	}
 
-	ShapeInformation *xInfoCopy = shapeCopy(xInfo);
-	ShapeInformation *resultInfoCopy = shapeCopy(resultInfo);
+	__syncthreads();
+
+
 	if(!resultScalar) {
-		int offset3 = offset(blockIdx.x ,xInfoCopy->rank,xInfoCopy,dimension,dimensionLength);
-		sPartials[tid] = dx[offset3 + tid * xInfoCopy->elementWiseStride];
+		int offset3 = offset(blockIdx.x ,xInfo->rank,xInfo,dimension,dimensionLength);
+		sPartials[tid] = dx[offset3 + tid * xInfo->elementWiseStride];
 
 	}
 	else {
@@ -199,8 +207,7 @@ __device__ void transform(
 		// reading from global memory, writing to shared memory
 		unsigned int tid = threadIdx.x;
 		unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
-		if(i >= n)
-			return;
+
 
 		unsigned int gridSize = blockSize * 2 * gridDim.x;
 
@@ -304,13 +311,21 @@ __device__ void transform(
 		}
 
 		__syncthreads();
+		//__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
+		T ** pointerToPartials = (T **)&sPartials;
+		aggregatePartials(pointerToPartials,tid,extraParams);
+
 		// write result for this block to global mem
-		if (tid == 0)
+		if (tid == 0 && blockIdx.x == 0) {
+			printf("Assigning %f\n", reduction);
 			result[blockIdx.x] = postProcess(reduction,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+		}
 	}
 
 
 	__syncthreads();
+
+
 
 
 	if(tid == 0) {
@@ -327,8 +342,6 @@ __device__ void transform(
 	}
 
 
-	free(xInfoCopy);
-	free(resultInfoCopy);
 
 }
 

@@ -21,6 +21,7 @@ typedef struct {
 } ShapeInformation;
 
 
+
 __device__ __host__ int isScalar(ShapeInformation *info) {
 	if(info->rank > 2)
 		return 0;
@@ -365,18 +366,14 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	int rank = buffer[0];
 
 	//start after rank
-	info->shape = (int *) malloc(sizeof(int) * rank);
-	info->stride = (int *) malloc(sizeof(int) * rank);
+	info->shape = buffer + 1;
+	info->stride = buffer + (1 + rank);
 	info->rank = rank;
 	info->offset = buffer[length - 2];
 	info->elementWiseStride = buffer[length - 1];
-	int count = 1;
-	for(int i = 0; i < rank; i++) {
-		info->shape[i] = buffer[count++];
-	}
-	for(int i = 0; i < rank; i++) {
-		info->stride[i] = buffer[count++];
-	}
+	int *stride = buffer + 1 + rank;
+	info->stride = stride;
+	info->order = 'c';
 
 	return info;
 }
