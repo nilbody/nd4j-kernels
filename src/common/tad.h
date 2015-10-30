@@ -22,9 +22,38 @@ typedef struct {
 
 
 
+template<typename T>
+__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
+	// start the shared memory loop on the next power of 2 less
+	// than the block size.  If block size is not a power of 2,
+	// accumulate the intermediate sums in the remainder range.
+	T *sPartials = *sPartialsRef;
+	int floorPow2 = blockDim.x;
+
+	if (floorPow2 & (floorPow2 - 1)) {
+		while ( floorPow2 & (floorPow2 - 1) ) {
+			floorPow2 &= floorPow2 - 1;
+		}
+		if (tid >= floorPow2) {
+			sPartials[tid - floorPow2] = update(sPartials[tid - floorPow2],sPartials[tid],extraParams);
+		}
+		__syncthreads();
+	}
+
+	for (int activeThreads = floorPow2 >> 1;activeThreads;	activeThreads >>= 1) {
+		if (tid < activeThreads) {
+			sPartials[tid] = update(sPartials[tid],sPartials[tid + activeThreads],extraParams);
+		}
+		__syncthreads();
+	}
+}
+
+
 __device__ __host__ int isScalar(ShapeInformation *info) {
 	if(info->rank > 2)
 		return 0;
+	if(info->rank == 1)
+		return info->shape[0] == 1;
 	else if(info->rank == 2) {
 		return info->shape[0] == 1 && info->shape[1] == 1;
 	}
@@ -230,6 +259,9 @@ __device__ __host__ int checkArrangeArray(int *arr,int *shape,int arrLength,int 
 	return 1;
 }
 
+
+
+
 __device__ __host__ char getOrder(int length ,int *shape,int *stride,int elementStride) {
 	int sd;
 	int dim;
@@ -340,7 +372,9 @@ __device__ __host__ void permute(ShapeInformation **info,int *rearrange,int rank
 
 }
 
-
+/**
+ *
+ */
 __device__ __host__ int *slice(int *shape,int rank) {
 	int *ret = (int *) malloc((rank - 1) * sizeof(int));
 	for(int i = 0; i < rank - 1; i++) {
@@ -362,18 +396,18 @@ __device__ __host__ int *slice(int *shape,int rank) {
  */
 __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	ShapeInformation *info = (ShapeInformation *) malloc(sizeof(ShapeInformation));
-	int length = buffer[0] * 2 + 3;
+	int length = buffer[0] * 2 + 4;
 	int rank = buffer[0];
 
 	//start after rank
 	info->shape = buffer + 1;
 	info->stride = buffer + (1 + rank);
 	info->rank = rank;
-	info->offset = buffer[length - 2];
-	info->elementWiseStride = buffer[length - 1];
+	info->offset = buffer[length - 3];
+	info->elementWiseStride = buffer[length - 2];
 	int *stride = buffer + 1 + rank;
 	info->stride = stride;
-	info->order = 'c';
+	info->order = (char) buffer[length - 1];
 
 	return info;
 }
@@ -413,10 +447,10 @@ __device__ __host__ int isVector(int *shape,int rank) {
  * rank * 2 + 3
  * @param rank the rank to get the shape
  * info length for
- * @return rank * 2 + 3
+ * @return rank * 2 + 4
  */
 __device__ __host__ int shapeInfoLength(int rank) {
-	return rank * 2 + 3;
+	return rank * 2 + 4;
 }
 
 /**
@@ -538,8 +572,28 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 }
 
 
+/**
+ * Returns a shape buffer
+ * for the shape information metadata.
+ */
+__device__ __host__ int * toShapeBuffer(ShapeInformation *info) {
+	int *ret = new int[shapeInfoLength(info->rank)];
+	int count = 1;
+	ret[0] = info->rank;
+	for(int i = 0; i < info->rank; i++) {
+		ret[count++] = info->shape[i];
+	}
+	for(int i = 0; i < info->rank; i++) {
+		ret[count++] = info->stride[i];
+	}
+
+	ret[count++] = info->offset;
+	ret[count++] = info->elementWiseStride;
+	ret[count++] = info->order;
 
 
+	return ret;
+}
 
 
 

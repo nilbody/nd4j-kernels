@@ -53,32 +53,6 @@ __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParam
 }
 
 
-template<typename T>
-__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
-	// start the shared memory loop on the next power of 2 less
-	// than the block size.  If block size is not a power of 2,
-	// accumulate the intermediate sums in the remainder range.
-	T *sPartials = *sPartialsRef;
-	int floorPow2 = blockDim.x;
-
-	if (floorPow2 & (floorPow2 - 1)) {
-		while ( floorPow2 & (floorPow2 - 1) ) {
-			floorPow2 &= floorPow2 - 1;
-		}
-		if (tid >= floorPow2) {
-			sPartials[tid - floorPow2] = merge(sPartials[tid - floorPow2],sPartials[tid],extraParams);
-		}
-		__syncthreads();
-	}
-
-	for (int activeThreads = floorPow2 >> 1;activeThreads;	activeThreads >>= 1) {
-		if (tid < activeThreads) {
-			sPartials[tid] = merge(sPartials[tid],sPartials[tid + activeThreads],extraParams);
-		}
-		__syncthreads();
-	}
-}
-
 
 template<typename T>
 __global__ void doReduce(
@@ -98,7 +72,6 @@ __global__ void doReduce(
 	T sum = doBlock(n,sPartials,dx,xOffset,incx,extraParams);
 	sPartials[tid] = sum;
 	__syncthreads();
-	aggregatePartials(&sPartials,tid,extraParams);
 	if (tid == 0) {
 		result[start + resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
 	}
@@ -164,21 +137,22 @@ __device__ void transform(
 	//init the tad off
 
 
-
-
-	__shared__ int xLength;
-	if(tid == 0) {
-		int *keep2 = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
-		xLength = prod(keep2,dimensionLength);
-		free(keep2);
-	}
-
-	__syncthreads();
-
-
 	__shared__ int resultScalar;
 	resultScalar = isScalar(resultInfo);
 	__syncthreads();
+
+
+
+	//element wise strde used for vector wise operations
+	//note here for fortran ordering we take the prod of the stride.
+	__shared__ int elementWiseStride;
+	if(tid == 0) {
+		if(xInfo->order == 'c')
+			elementWiseStride = xInfo->elementWiseStride;
+		else
+			elementWiseStride = prod(xInfo->stride,xInfo->rank);
+	}
+
 
 	//shared memory space for storing intermediate results
 	SharedMemory<T> val;
@@ -192,10 +166,29 @@ __device__ void transform(
 	}
 
 	__syncthreads();
+	__shared__ int offset3;
 
+
+	__shared__ int xLength;
+
+
+	__syncthreads();
 
 	if(!resultScalar) {
-		int offset3 = offset(blockIdx.x ,xInfo->rank,xInfo,dimension,dimensionLength);
+		if(tid == 0) {
+			if(resultScalar) {
+				xLength = n;
+			}
+			else {
+				int *keep2 = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
+				xLength = prod(keep2,dimensionLength);
+				free(keep2);
+			}
+
+			offset3 = offset(blockIdx.x ,xInfo->rank,xInfo,dimension,dimensionLength);
+
+
+		}
 		sPartials[tid] = dx[offset3 + tid * xInfo->elementWiseStride];
 
 	}
@@ -206,10 +199,8 @@ __device__ void transform(
 		// perform first level of reduction,
 		// reading from global memory, writing to shared memory
 		unsigned int tid = threadIdx.x;
-		unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
-
-
-		unsigned int gridSize = blockSize * 2 * gridDim.x;
+		unsigned int i = xInfo->offset +   blockIdx.x   * xInfo->elementWiseStride + tid;
+		unsigned int gridSize = blockDim.x * gridDim.x * xInfo->elementWiseStride;
 
 		T reduction = extraParams[0];
 		T curr;
@@ -217,13 +208,13 @@ __device__ void transform(
 		// we reduce multiple elements per thread.  The number is determined by the
 		// number of active thread blocks (via gridDim).  More blocks will result
 		// in a larger gridSize and therefore fewer elements per thread
-		while (i < n)	{
+		while (i < n && i % xInfo->elementWiseStride == 0)	{
 			curr = dx[i];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
 
 
 			// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
-			if (nIsPow2 || i + blockSize < n) {
+			if (nIsPow2 && i + blockSize < n) {
 				curr = dx[i + blockSize];
 				reduction = update(reduction,op(curr,extraParams),extraParams);
 
@@ -232,92 +223,17 @@ __device__ void transform(
 			i += gridSize;
 		}
 
+
 		// each thread puts its local sum into shared memory
 		sPartials[tid] = reduction;
 		__syncthreads();
 
-
-		// do reduction in shared mem
-		if ((blockSize >= 512) && (tid < 256)) {
-			curr = sPartials[tid + 256];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >= 256) &&(tid < 128)) {
-			curr = sPartials[tid + 128];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >= 128) && (tid <  64)) {
-			curr = sPartials[tid + 64];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-
-		// fully unroll reduction within a single warp
-		if ((blockSize >=  64) && (tid < 32)) {
-			curr = sPartials[tid + 32];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >=  32) && (tid < 16)) {
-			curr = sPartials[tid + 16];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >=  16) && (tid <  8)) {
-			curr = sPartials[tid + 8];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >=   8) && (tid <  4)) {
-			curr = sPartials[tid + 4];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >=   4) && (tid <  2)) {
-			curr = sPartials[tid + 2];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-
-		if ((blockSize >=   2) && ( tid <  1)) {
-			curr = sPartials[tid + 1];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-			sPartials[tid] = reduction;
-		}
-
-		__syncthreads();
-		//__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
-		T ** pointerToPartials = (T **)&sPartials;
-		aggregatePartials(pointerToPartials,tid,extraParams);
+		T ** sPartialsRef = (T **) &sPartials;
+		aggregatePartials(sPartialsRef,tid,extraParams);
 
 		// write result for this block to global mem
 		if (tid == 0 && blockIdx.x == 0) {
-			result[blockIdx.x] = postProcess(reduction,n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+			result[blockIdx.x] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
 		}
 	}
 
@@ -327,17 +243,13 @@ __device__ void transform(
 
 
 
-	if(tid == 0) {
-		if(!resultScalar) {
-			T currResult = extraParams[0];
-			for(int i = 0; i < xLength; i++) {
-				currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
-			}
-
-			result[blockIdx.x] = postProcess(currResult,xLength,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
-
+	if(tid == 0 && !resultScalar) {
+		T currResult = extraParams[0];
+		for(int i = 0; i < xLength; i++) {
+			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
 		}
 
+		result[blockIdx.x] = postProcess(currResult,xLength,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
 	}
 
 
