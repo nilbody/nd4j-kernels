@@ -21,20 +21,6 @@ template<> __device__ double postProcess<double>(double reduction,int n,int xOff
 	return reduction;
 }
 
-extern "C"
-__global__ void iamax_strided_double(
-		int n
-		,double *dx
-		,int *xVectorInfo
-		,double *extraParams
-		,double *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<double>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
-}
-
-
 
 template<> __device__ float merge<float>(float old,float opOutput,float *extraParams) {
 	return max(old,opOutput);
@@ -55,15 +41,5 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 	return reduction;
 }
 
-extern "C"
-__global__ void iamax_strided_float(	int n
-		,float *dx
-		,int *xVectorInfo
-		,float *extraParams
-		,float *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<float>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
-}
+
 

@@ -52,33 +52,8 @@ template<> __device__ float postProcess<float>(float reduction,int n,int xOffset
 
 
 
-extern "C"
-__global__ void std_strided_double(	int n
-		,double *dx
-		,int *xVectorInfo
-		,double *extraParams
-		,double *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<double>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
-
-}
 
 
-
-extern "C"
-__global__ void std_strided_float(	int n
-		,float *dx
-		,int *xVectorInfo
-		,float *extraParams
-		,float *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<float>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
-
-}
 
 
 

@@ -28,20 +28,6 @@ template<> __device__ double postProcess<double>(double reduction,int n,int xOff
 
 
 
-extern "C"
-__global__ void var_strided_double(	int n
-		,double *dx
-		,int *xVectorInfo
-		,double *extraParams
-		,double *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<double>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
-
-}
-
-
 template<> __device__ float merge<float>(float f1,float f2,float *extraParams) {
 	return f1 + f2;
 }
@@ -64,19 +50,6 @@ template<> __device__ float op<float>(float d1,float *extraParams) {
 template<> __device__ float postProcess<float>(float reduction,int n,int xOffset,float *dx,int incx,float *extraParams,float *result) {
 	float bias = extraParams[1];
 	return  (reduction - (powf(bias,2.0) / n)) / (float) (n - 1.0);
-
-}
-
-extern "C"
-__global__ void var_strided_float(	int n
-		,float *dx
-		,int *xVectorInfo
-		,float *extraParams
-		,float *result,
-		int *resultVectorInfo
-		,int *gpuInformation,
-		int *problemDefinition) {
-	transform<float>(n,dx,xVectorInfo,extraParams,result,resultVectorInfo,gpuInformation,problemDefinition);
 
 }
 

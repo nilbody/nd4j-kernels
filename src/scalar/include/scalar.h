@@ -17,3 +17,32 @@ __device__ void transform(int n, int idx,T dx,T *dy,int incy,T *params,T *result
 }
 
 
+
+
+extern "C"
+__global__ void transform_double(
+		int n,
+		int idx,
+		double dx,
+		double *dy,
+		int incx,
+		double *params,
+		double *result,
+		int blockSize) {
+       transform<double>(n,idx,dx,dy,incx,params,result,blockSize);
+ }
+
+
+
+extern "C"
+__global__ void transform_float(
+		int n,
+		int idx,
+		float dx,
+		float *dy,
+		int incx,
+		float *params,
+		float *result,
+		int blockSize) {
+       transform<float>(n,idx,dx,dy,incx,params,result,blockSize);
+ }
