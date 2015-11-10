@@ -6,6 +6,7 @@
 #include <indexing.h>
 
 
+
 //an op for the kernel
 template<typename T>
 __device__ T op(T d1,T *extraParams);
@@ -40,10 +41,11 @@ template <> float postProcess<float>(float reduction,int n,int xOffset,float *dx
 
 
 
+
 template<typename T>
 __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParams) {
 	T sum = extraParams[0];
-	for (int i = 0; i < n; i ++) {
+	for (int i = 0; i < n; i++) {
 		int currIdx = xOffset + i * incx;
 		T curr = dx[currIdx];
 		sum = update(sum,op(curr,extraParams),extraParams);
@@ -54,28 +56,90 @@ __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParam
 
 
 
-template<typename T>
-__global__ void doReduce(
-		T *dx
-		,T *extraParams
-		,int n
-		,ShapeInformation *xInfo,
-		T *result,
-		ShapeInformation *resultInfo) {
-	SharedMemory<T> val;
-	T *sPartials = val.getPointer();
-	int tid = threadIdx.x;
-	int start = blockDim.x * blockIdx.x + tid;
-	int xOffset = start + xInfo->offset;
-	int incx = xInfo->elementWiseStride;
-	int resultOffset = start + blockIdx.x * resultInfo->elementWiseStride;
-	T sum = doBlock(n,sPartials,dx,xOffset,incx,extraParams);
-	sPartials[tid] = sum;
-	__syncthreads();
-	if (tid == 0) {
-		result[start + resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
+
+
+
+
+template <typename T>
+__device__ void initializeShared(T *extraParams,T** sPartials,int sMemSize) {
+	int sPartialsLength = sMemSize / sizeof(T);
+	T *sPartialsDeref = (T *) *sPartials;
+	for(int i = 0; i < sPartialsLength; i++) {
+		sPartialsDeref[i] = extraParams[0];
 	}
 }
+
+template <typename T>
+__global__ void reduceTad(
+		T *data,
+		int index
+		,int *tadShapeInfo
+		,T *extraParams
+		,int *gpuInformation
+		,TADPermuteInfo xTadInfo
+		,int *dimension
+		,int dimensionLength,
+		int xLength,
+		T *result) {
+
+	SharedMemory<T> val;
+	volatile T *sPartials = val.getPointer();
+	int tid = threadIdx.x;
+	if(tid == 0) {
+		int sMemSize = gpuInformation[2];
+		int sPartialsLength = sMemSize / sizeof(T);
+		for(int i = 0; i < sPartialsLength; i++) {
+			sPartials[i] = extraParams[0];
+		}
+	}
+
+	__syncthreads();
+	int nIsPow2 = (xLength % 2 == 0);
+
+	int blockSize = gpuInformation[0];
+
+	// perform first level of reduction,
+	// reading from global memory, writing to shared memory
+	unsigned int i = offset(tadShapeInfo) +   blockIdx.x   *  elementWiseStride(tadShapeInfo) + tid;
+	unsigned int gridSize = blockDim.x * gridDim.x *  elementWiseStride(tadShapeInfo);
+
+	T reduction = extraParams[0];
+	T curr;
+
+	// we reduce multiple elements per thread.  The number is determined by the
+	// number of active thread blocks (via gridDim).  More blocks will result
+	// in a larger gridSize and therefore fewer elements per thread
+	while (i < xLength && i %  elementWiseStride(tadShapeInfo) == 0)	{
+		curr = data[i];
+		reduction = update(reduction,op(curr,extraParams),extraParams);
+
+
+		// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
+		if (nIsPow2 && i + blockSize < xLength) {
+			curr = data[i + blockSize];
+			reduction = update(reduction,op(curr,extraParams),extraParams);
+
+		}
+
+		i += gridSize;
+	}
+
+
+	// each thread puts its local sum into shared memory
+	sPartials[tid] = reduction;
+	__syncthreads();
+
+	T ** sPartialsRef = (T **) &sPartials;
+	aggregatePartials(sPartialsRef,tid,extraParams);
+
+	// write result for this block to global mem
+	if (tid == 0) {
+		result[index] = postProcess(sPartials[0],xLength,offset(tadShapeInfo),data, elementWiseStride(tadShapeInfo),extraParams,result);
+	}
+
+
+}
+
 
 
 
@@ -111,104 +175,111 @@ __device__ void transform(
 		int dimensionLength) {
 
 
-	__shared__ int nIsPow2;
-	nIsPow2 = (n % 2 == 0);
-	__syncthreads();
+	printf("GPU INFO %d %d %d %d \n",gpuInformation[0],gpuInformation[1],gpuInformation[2],gpuInformation[3]);
+
+	printf("Starting block %d and tid %d\n",blockIdx.x,threadIdx.x);
+	int nIsPow2 = (n % 2 == 0);
 	/**
 	 * Gpu information for the problem
 	 */
 	int tid = threadIdx.x;
 
 
-	//shared shape information for a given block
-	__shared__ ShapeInformation *xInfo;
-	__shared__ ShapeInformation *resultInfo;
+	__shared__ volatile int resultScalar;
 
 
-
-	//setup the shared shape information
-	if(tid == 0)  {
-		//initialize the shape information only once
-		xInfo = infoFromBuffer(xShapeInfo);
-		resultInfo =  infoFromBuffer(resultShapeInfo);
-	}
-
-	__syncthreads();
-	//init the tad off
-
-
-	__shared__ int resultScalar;
-	resultScalar = isScalar(resultInfo);
-	__syncthreads();
-
-
-
-	//element wise strde used for vector wise operations
-	//note here for fortran ordering we take the prod of the stride.
-	__shared__ int elementWiseStride;
-	if(tid == 0) {
-		if(xInfo->order == 'c')
-			elementWiseStride = xInfo->elementWiseStride;
-		else
-			elementWiseStride = prod(xInfo->stride,xInfo->rank);
-	}
+	__shared__ int *xShape;
+	__shared__ int xRank;
+	__shared__ int xElementWiseStride;
+	__shared__ int xOffset;
 
 
 	//shared memory space for storing intermediate results
 	SharedMemory<T> val;
 	volatile T *sPartials = val.getPointer();
+	sPartials[tid] = extraParams[0];
+	printf("Initialized value tid %d on block %d\n",tid,blockIdx.x);
+	__syncthreads();
+
+
+	//starting index for tad
+	__shared__ volatile int currentBlockOffset;
+	//ending index for tad
+	__shared__ volatile int endingOffset;
+	//length for the tad
+	__shared__ volatile int xLength;
+
+	__shared__ volatile int resultLength;
+
+	__shared__ volatile int tadsForBlock;
+
+	__shared__ volatile int elementsPerThread;
+
+
+	//only compute the tad indexes once
+	__shared__ TADPermuteInfo xTadInfo;
+	__shared__ TADPermuteInfo resultTadInfo;
+	int valueOffset;
+
+	__shared__ T startValue;
+
+
+	T reduction = extraParams[0];
+
+
 	if(tid == 0) {
-		int sMemSize = gpuInformation[2];
-		int sPartialsLength = sMemSize / sizeof(T);
-		for(int i = 0; i < sPartialsLength; i++) {
-			sPartials[i] = extraParams[0];
-		}
+		xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
+		resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
+		resultScalar = isScalar(resultShapeInfo);
+		currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
+		endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
+		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
+		xShape = shape(xShapeInfo);
+		xRank = rank(xShapeInfo);
+		xOffset = offset(xShapeInfo);
+		xElementWiseStride = elementWiseStride(xShapeInfo);
+
+		//reduction on whole buffer
+		if(resultScalar)
+			xLength = n;
+
+		else
+			xLength = prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
+
+		valueOffset = tadOffset(xShapeInfo,currentBlockOffset);
+		double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
+		if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
+			tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
+		else
+			tadsForBlock = 1;
+		if(tadsForBlock < 1)
+			tadsForBlock = 1;
+		//set a constant start value
+		startValue = reduction;
+		//when the number of elements per tad is greater than grid size, we need to compute partial
+		//reductions when initializing
+		if(xLength > gpuInformation[1])
+			elementsPerThread = xLength / gpuInformation[1];
+		else
+			elementsPerThread = 1;
 	}
 
 	__syncthreads();
-	__shared__ int offset3;
+	printf("Setting up block %d with element wise stride %d and offset %d\n",blockIdx.x,xElementWiseStride,currentBlockOffset);
 
+	T curr;
 
-	__shared__ int xLength;
-
-
-	__syncthreads();
-
-	if(!resultScalar) {
-		if(tid == 0) {
-			if(resultScalar) {
-				xLength = n;
-			}
-			else {
-				int *keep2 = keep(xInfo->shape,dimension,dimensionLength,xInfo->rank);
-				xLength = prod(keep2,dimensionLength);
-				free(keep2);
-			}
-
-			offset3 = offset(blockIdx.x ,xInfo->rank,xInfo,dimension,dimensionLength);
-
-
-		}
-		sPartials[tid] = dx[offset3 + tid * xInfo->elementWiseStride];
-
-	}
-	else {
-
+	if(resultScalar) {
 		int blockSize = gpuInformation[0];
 
-		// perform first level of reduction,
-		// reading from global memory, writing to shared memory
-		unsigned int tid = threadIdx.x;
-		unsigned int i = xInfo->offset +   blockIdx.x   * xInfo->elementWiseStride + tid;
-		unsigned int gridSize = blockDim.x * gridDim.x * xInfo->elementWiseStride;
+		unsigned int i = xOffset +   blockIdx.x   *  xElementWiseStride + tid;
+		unsigned int gridSize = blockDim.x * gridDim.x *  xElementWiseStride;
 
-		T reduction = extraParams[0];
-		T curr;
 
 		// we reduce multiple elements per thread.  The number is determined by the
 		// number of active thread blocks (via gridDim).  More blocks will result
 		// in a larger gridSize and therefore fewer elements per thread
-		while (i < n && i % xInfo->elementWiseStride == 0)	{
+		while (i < n && i %  xElementWiseStride == 0)	{
 			curr = dx[i];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
 
@@ -232,30 +303,79 @@ __device__ void transform(
 		aggregatePartials(sPartialsRef,tid,extraParams);
 
 		// write result for this block to global mem
-		if (tid == 0 && blockIdx.x == 0) {
-			result[blockIdx.x] = postProcess(sPartials[0],n,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+		if (tid == 0) {
+			result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
 		}
 	}
 
+	else if(!resultScalar) {
+		//number of tads per block to process
+		for(int i = 0; i < tadsForBlock; i++) {
+			int tadIndex = tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
+			int blockOffset = offset(tadIndex, xShapeInfo,dimension,dimensionLength,xTadInfo);
+			//concurrently load all elements in to shared memory
+			if(elementsPerThread > 1) {
+				for(int i = 0; i < elementsPerThread; i++) {
+					if(i > 0) {
+						valueOffset = blockOffset  +(tid * i * xElementWiseStride);
+						//break at the end
+						if(valueOffset >= n)
+							break;
+						T val = dx[valueOffset];
+						sPartials[tid] = update(sPartials[tid],op(val,extraParams),extraParams);
+					}
 
-	__syncthreads();
+					else {
+						valueOffset = blockOffset  +(tid * i * xElementWiseStride);
+						//break at the end
+						if(valueOffset >= n)
+							break;
+						T val = dx[valueOffset];
+						sPartials[tid] = val;
+					}
 
 
 
+				}
+			}
+			else {
+				int blockOffset = currentBlockOffset;
+				valueOffset = blockOffset  + tid * xElementWiseStride;
+				T val = dx[valueOffset];
+				printf("Setup value %f for tad %d and tid %d with block offset %d\n",val,tadIndex,tid,blockOffset);
+				sPartials[tid] = val;
+			}
 
-	if(tid == 0 && !resultScalar) {
-		T currResult = extraParams[0];
-		for(int i = 0; i < xLength; i++) {
-			currResult = update(currResult,op(sPartials[i],extraParams),extraParams);
+			__syncthreads();
+
+			//do reduction in shared memory only on the first thread
+			if(tid == 0) {
+				curr = startValue;
+				for(int j = 0; j < xLength; j++) {
+					curr = update(curr,op(sPartials[j],extraParams),extraParams);
+				}
+				result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+			}
+
+
+			if(blockOffset >= n)
+				break;
+
+
+
 		}
 
-		result[blockIdx.x] = postProcess(currResult,xLength,xInfo->offset,dx,xInfo->elementWiseStride,extraParams,result);
+
 	}
 
 
+
+	if(tid == 0) {
+		freePermuteInfo(xTadInfo);
+		freePermuteInfo(resultTadInfo);
+	}
 
 }
-
 
 
 //kernels defined to allow lookup by name: notice extern c

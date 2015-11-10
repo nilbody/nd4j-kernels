@@ -1,5 +1,7 @@
 //Original credit: https://llpanorama.wordpress.com/2008/06/11/threads-and-blocks-and-grids-oh-my/
 
+#define MAX_THREADS_PER_BLOCK 1024
+
 /**
  * Returns the number of elements per thread
  */
