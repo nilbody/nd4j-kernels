@@ -175,9 +175,6 @@ __device__ void transform(
 		int dimensionLength) {
 
 
-	printf("GPU INFO %d %d %d %d \n",gpuInformation[0],gpuInformation[1],gpuInformation[2],gpuInformation[3]);
-
-	printf("Starting block %d and tid %d\n",blockIdx.x,threadIdx.x);
 	int nIsPow2 = (n % 2 == 0);
 	/**
 	 * Gpu information for the problem
@@ -198,7 +195,6 @@ __device__ void transform(
 	SharedMemory<T> val;
 	volatile T *sPartials = val.getPointer();
 	sPartials[tid] = extraParams[0];
-	printf("Initialized value tid %d on block %d\n",tid,blockIdx.x);
 	__syncthreads();
 
 
@@ -265,7 +261,6 @@ __device__ void transform(
 	}
 
 	__syncthreads();
-	printf("Setting up block %d with element wise stride %d and offset %d\n",blockIdx.x,xElementWiseStride,currentBlockOffset);
 
 	T curr;
 
@@ -342,7 +337,6 @@ __device__ void transform(
 				int blockOffset = currentBlockOffset;
 				valueOffset = blockOffset  + tid * xElementWiseStride;
 				T val = dx[valueOffset];
-				printf("Setup value %f for tad %d and tid %d with block offset %d\n",val,tadIndex,tid,blockOffset);
 				sPartials[tid] = val;
 			}
 
