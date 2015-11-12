@@ -445,6 +445,13 @@ __device__ __host__ int *stride(int *buffer) {
 	return buffer + (1 + rank(buffer));
 }
 
+/**
+ * Compute the length of the given shape
+ */
+__device__ __host__ int length(int *shapeInfo) {
+	return prod(shape(shapeInfo),rank(shapeInfo));
+}
+
 
 
 __device__ __host__ int offset(int *buffer) {
