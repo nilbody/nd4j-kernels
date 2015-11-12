@@ -41,6 +41,34 @@ template <> float postProcess<float>(float reduction,int n,int xOffset,float *dx
 
 
 
+template<typename T>
+__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
+	// start the shared memory loop on the next power of 2 less
+	// than the block size.  If block size is not a power of 2,
+	// accumulate the intermediate sums in the remainder range.
+	T *sPartials = *sPartialsRef;
+	int floorPow2 = blockDim.x;
+
+	if (floorPow2 & (floorPow2 - 1)) {
+		while ( floorPow2 & (floorPow2 - 1) ) {
+			floorPow2 &= floorPow2 - 1;
+		}
+		if (tid >= floorPow2) {
+			sPartials[tid - floorPow2] = update(sPartials[tid - floorPow2],sPartials[tid],extraParams);
+		}
+		__syncthreads();
+	}
+
+	for (int activeThreads = floorPow2 >> 1;activeThreads;	activeThreads >>= 1) {
+		if (tid < activeThreads) {
+			sPartials[tid] = update(sPartials[tid],sPartials[tid + activeThreads],extraParams);
+		}
+		__syncthreads();
+	}
+}
+
+
+
 
 template<typename T>
 __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParams) {
