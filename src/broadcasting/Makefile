@@ -12,7 +12,7 @@ sub
 
 all: $(SUBDIRS)
 $(SUBDIRS):
-	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@.cu  $(LINK) -o $(shell pwd)/../../output/$@.$(EXTENSION)
+	cd $@ && $(BASE_COMPILE)  $(shell pwd)/$@/$@.cu  $(LINK) -o $(shell pwd)/../../output/$@_broadcast.$(EXTENSION)
 
 .PHONY: all $(SUBDIRS)
 
