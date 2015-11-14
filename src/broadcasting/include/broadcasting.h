@@ -9,10 +9,13 @@
 #define BROADCASTING_H_
 
 #include <math.h>
+#include <stdio.h>
 
 #include <sharedmem.h>
 #include <tad.h>
-#include <stdio.h>
+#include <indexing.h>
+
+
 
 template <typename T>
 __device__ T op(T d1,T d2);
@@ -40,51 +43,8 @@ __device__ void transform(
 	 */
 	int tid = threadIdx.x;
 
-	__shared__ int *xShape;
-	__shared__ int xRank;
-	__shared__ int xElementWiseStride;
 
 
-	__shared__ int *yShape;
-	__shared__ int yRank;
-	__shared__ int yElementWiseStride;
-	__shared__ int yOffset;
-
-
-	__shared__ int *resultShape;
-	__shared__ int resultRank;
-	__shared__ int resultElementWiseStride;
-	__shared__ int resultOffset;
-
-	//shared memory space for storing intermediate results
-	SharedMemory<T> val;
-	volatile T *sPartials = val.getPointer();
-	sPartials[tid] = 0.0;
-	__syncthreads();
-
-
-	//starting index for tad
-	__shared__ volatile int currentYBlockOffset;
-	//ending index for tad
-	__shared__ volatile int endingYOffset;
-	//length for the tad
-	__shared__ volatile int yLength;
-
-
-
-
-	//starting index for tad
-	__shared__ volatile int currentBlockOffset;
-	//ending index for tad
-	__shared__ volatile int endingOffset;
-	//length for the tad
-	__shared__ volatile int xLength;
-
-
-
-	__shared__ volatile int resultLength;
-
-	__shared__ volatile int tadsForBlock;
 
 	__shared__ volatile int elementsPerThread;
 
@@ -95,6 +55,7 @@ __device__ void transform(
 	__shared__ TADPermuteInfo resultTadInfo;
 
 
+	__shared__ int tads;
 
 
 
@@ -103,71 +64,49 @@ __device__ void transform(
 		xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
 		yTadInfo  = tadInfo(yShapeInfo,dimension,dimensionLength);
 		resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
+		tads = tensorsAlongDimension(rank(xShapeInfo),length(xShapeInfo),shape(xShapeInfo),dimension,dimensionLength);
+		elementsPerThread = 1;
+		if(blockDim.x >= MAX_THREADS_PER_BLOCK) {
+			elementsPerThread = length(xShapeInfo) / blockDim.x;
+		}
+	}
 
 
-		currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
-		endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
-		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-
-		//initialize x
-		xShape = shape(xShapeInfo);
-		xRank = rank(xShapeInfo);
-		xElementWiseStride = elementWiseStride(xShapeInfo);
-
-
-		//initialize y
-		yShape = shape(yShapeInfo);
-		yRank = rank(yShapeInfo);
-		yOffset = offset(yShapeInfo);
-		yElementWiseStride = elementWiseStride(yShapeInfo);
-
-
-		//initialize result
-		resultShape = shape(resultShapeInfo);
-		resultRank = rank(resultShapeInfo);
-		resultOffset = offset(resultShapeInfo);
-		resultElementWiseStride = elementWiseStride(resultShapeInfo);
-
-
-		currentYBlockOffset = offset(blockIdx.x, yShapeInfo,dimension,dimensionLength,yTadInfo);
-		endingYOffset = offset(blockIdx.x + 1 ,yShapeInfo,dimension,dimensionLength,yTadInfo);
+	__syncthreads();
 
 
 
+	if(tid >= length(yShapeInfo))
+		return;
 
-		double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
-		if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
-			tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
-		else
-			tadsForBlock = 1;
-		if(tadsForBlock < 1)
-			tadsForBlock = 1;
+	if(elementsPerThread > 1) {
+		for (int i = 0; i < tads; i++) {
+			printf("This is large.\n");
+			for(int j = 0; j < elementsPerThread; j += blockDim.x) {
+				int xOffset2  = offset(i, xShapeInfo,dimension,dimensionLength,xTadInfo);
+				int xIdx = xOffset2 +  (tid + j) * elementWiseStride(xShapeInfo);
+				if(length(xShapeInfo) <= xIdx)
+					break;
+				int resultIdx = xIdx;
+				result[resultIdx] = op(x[xIdx],y[tid * elementWiseStride(yShapeInfo)]);
 
-
-		__syncthreads();
-
-
-
-		//length of the buffer to broadcast
-		int n = length(yShapeInfo);
-		//printf("Running tads for block %d\n",tadsForBlock);
-		//iterate over each tad that the block will process
-		for(int tad = 0; tad < tadsForBlock; tad++) {
-			//printf("Running tad %d on block %d\n",tad,blockIdx.x);
-			//starting offset for the tad given the block for x
-			int xOffset = offset(tad + blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
-			//starting offset for the tad given the block for the result
-			int resultOffset = offset(tad + blockIdx.x, resultShapeInfo,dimension,dimensionLength,resultTadInfo);
-			int yOffset = offset(yShapeInfo);
-			//printf("Offset x is %d and result offset is %d for block %d\n",xOffset,resultOffset,blockIdx.x);
-			int resultCount = 0;
-			for(;resultCount < n; resultCount++) {
-				result[resultOffset + resultCount * resultElementWiseStride] =
-						op(x[xOffset + resultCount * xElementWiseStride],y[yOffset + resultCount * yElementWiseStride]);
 			}
 
 		}
 	}
+	else {
+		for (int i = 0; i < tads; i++) {
+			int xOffset2  = offset(i, xShapeInfo,dimension,dimensionLength,xTadInfo);
+			int xIdx = xOffset2 +  tid * elementWiseStride(xShapeInfo);
+			if(length(xShapeInfo) <= xIdx)
+				break;
+			int resultIdx = xIdx;
+			result[resultIdx] = op(x[xIdx],y[tid * elementWiseStride(yShapeInfo)]);
+
+		}
+	}
+
+
 }
 
 extern "C"

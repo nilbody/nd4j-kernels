@@ -26,6 +26,7 @@ typedef struct {
 
 
 
+
 /**
  * @param toCopy the shape to copy
  * @return a copy of the original struct
@@ -408,6 +409,19 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	return info;
 }
 
+
+/**
+ * Returns the length of the
+ * shape information buffer:
+ * rank * 2 + 3
+ * @param rank the rank to get the shape
+ * info length for
+ * @return rank * 2 + 4
+ */
+__device__ __host__ int shapeInfoLength(int rank) {
+	return rank * 2 + 4;
+}
+
 __device__ __host__ int * shape(int *buffer) {
 	return buffer + 1;
 }
@@ -495,17 +509,6 @@ __device__ __host__ int isVector(int *shape,int rank) {
 	return 0;
 }
 
-/**
- * Returns the length of the
- * shape information buffer:
- * rank * 2 + 3
- * @param rank the rank to get the shape
- * info length for
- * @return rank * 2 + 4
- */
-__device__ __host__ int shapeInfoLength(int rank) {
-	return rank * 2 + 4;
-}
 
 /**
  * Computes the tensor along dimension
