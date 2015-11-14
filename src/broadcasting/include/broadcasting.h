@@ -81,7 +81,6 @@ __device__ void transform(
 
 	if(elementsPerThread > 1) {
 		for (int i = 0; i < tads; i++) {
-			printf("This is large.\n");
 			for(int j = 0; j < elementsPerThread; j += blockDim.x) {
 				int xOffset2  = offset(i, xShapeInfo,dimension,dimensionLength,xTadInfo);
 				int xIdx = xOffset2 +  (tid + j) * elementWiseStride(xShapeInfo);
