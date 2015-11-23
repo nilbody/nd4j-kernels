@@ -110,7 +110,10 @@ __device__ void transform(
         T val = x[i];
         T yVal = y[yOffset2];
         result[i] = op(val,yVal);
-		//result[i] = op(x[i],y[yOffset2]);
+	}
+
+	if(tid == 0) {
+		freePermuteInfo(xTadInfo);
 	}
 
 }

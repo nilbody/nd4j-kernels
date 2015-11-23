@@ -718,6 +718,7 @@ __host__ __device__ void freePermuteInfo(TADPermuteInfo info) {
 	free(info.permutedStrides);
 	free(info.remove);
 	free(info.reverseDimensions);
+	free(info.zeroDimension);
 }
 
 
