@@ -173,7 +173,7 @@ __device__ __host__ int* range(int from,int to) {
  * Keep the given indexes
  * in the data
  */
-__device__ __host__ int* keep(int *data,int *index,int indexLength,int dataLength) {
+__device__ __host__ int* keep(volatile int *data,int *index,int indexLength,int dataLength) {
 	int *ret = (int *) malloc((indexLength) * sizeof(int));
 	int count = 0;
 	for(int i = 0; i < dataLength; i++) {
@@ -409,19 +409,6 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	return info;
 }
 
-
-/**
- * Returns the length of the
- * shape information buffer:
- * rank * 2 + 3
- * @param rank the rank to get the shape
- * info length for
- * @return rank * 2 + 4
- */
-__device__ __host__ int shapeInfoLength(int rank) {
-	return rank * 2 + 4;
-}
-
 __device__ __host__ int * shape(int *buffer) {
 	return buffer + 1;
 }
@@ -509,6 +496,17 @@ __device__ __host__ int isVector(int *shape,int rank) {
 	return 0;
 }
 
+/**
+ * Returns the length of the
+ * shape information buffer:
+ * rank * 2 + 3
+ * @param rank the rank to get the shape
+ * info length for
+ * @return rank * 2 + 4
+ */
+__device__ __host__ int shapeInfoLength(int rank) {
+	return rank * 2 + 4;
+}
 
 /**
  * Computes the tensor along dimension
@@ -723,13 +721,19 @@ __host__ __device__ void freePermuteInfo(TADPermuteInfo info) {
 }
 
 
+__host__ __device__ void printIntArray(int *arr,int length) {
+	for(int i = 0; i < length; i++) {
+		printf("arr[%d] is %d \n",i,arr[i]);
+	}
+}
+
 
 /**
  * Computes the number
  * of tensors along
  * a given dimension
  */
-__device__ __host__ int tensorsAlongDimension(int rank,int length,int *shape,int *dimension,int dimensionLength) {
+__device__ __host__ int tensorsAlongDimension(volatile int rank,volatile int length,volatile int *shape,int *dimension,int dimensionLength) {
 	int *tensorShape = keep(shape,dimension,dimensionLength,rank);
 	int ret = length / prod(tensorShape,dimensionLength);
 	free(tensorShape);

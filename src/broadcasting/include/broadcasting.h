@@ -37,74 +37,81 @@ __device__ void transform(
 		int dimensionLength,
 		int *gpuInformation) {
 
+	int length2 = shapeInfoLength(rank(xShapeInfo));
+
 
 	/**
 	 * Gpu information for the problem
 	 */
-	int tid = threadIdx.x;
+	volatile int tid = threadIdx.x;
+
+
+	volatile __shared__ int *xShape;
+	volatile __shared__ int xRank;
+	volatile __shared__ int xElementWiseStride;
+	volatile __shared__ int xOffset;
+
+
+	__shared__ int yElementWiseStride;
+	__shared__ int yOffset;
 
 
 
+	//length for the tad
+	volatile __shared__  int yLength;
 
-	__shared__ volatile int elementsPerThread;
+	//length for the tad
+	volatile __shared__  int xLength;
+
+
+
+	volatile __shared__  int resultLength;
+
+	volatile __shared__  int tadsForBlock;
+
+	volatile __shared__  int elementsPerThread;
 
 
 	//only compute the tad indexes once
 	__shared__ TADPermuteInfo xTadInfo;
-	__shared__ TADPermuteInfo yTadInfo;
-	__shared__ TADPermuteInfo resultTadInfo;
 
 
-	__shared__ int tads;
+
+	//number of times a loop through the broadcast will be made wrt the length of y and x
+	volatile __shared__ int tads;
 
 
 
 
 	if(tid == 0) {
 		xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-		yTadInfo  = tadInfo(yShapeInfo,dimension,dimensionLength);
-		resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
-		tads = tensorsAlongDimension(rank(xShapeInfo),length(xShapeInfo),shape(xShapeInfo),dimension,dimensionLength);
-		elementsPerThread = 1;
-		if(blockDim.x >= MAX_THREADS_PER_BLOCK) {
-			elementsPerThread = length(xShapeInfo) / blockDim.x;
-		}
+		resultLength = length(resultShapeInfo);
+		//initialize x
+		xShape = shape(xShapeInfo);
+		xOffset = offset(xShapeInfo);
+		xRank = rank(xShapeInfo);
+		xLength = length(xShapeInfo);
+		xElementWiseStride = elementWiseStride(xShapeInfo);
+		//initialize y
+		yLength = length(yShapeInfo);
+
+		yOffset = offset(yShapeInfo);
+		yElementWiseStride = elementWiseStride(yShapeInfo);
 	}
 
 
 	__syncthreads();
 
 
-
-	if(tid >= length(yShapeInfo))
-		return;
-
-	if(elementsPerThread > 1) {
-		for (int i = 0; i < tads; i++) {
-			for(int j = 0; j < elementsPerThread; j += blockDim.x) {
-				int xOffset2  = offset(i, xShapeInfo,dimension,dimensionLength,xTadInfo);
-				int xIdx = xOffset2 +  (tid + j) * elementWiseStride(xShapeInfo);
-				if(length(xShapeInfo) <= xIdx)
-					break;
-				int resultIdx = xIdx;
-				result[resultIdx] = op(x[xIdx],y[tid * elementWiseStride(yShapeInfo)]);
-
-			}
-
-		}
+	int totalThreads = gridDim.x * blockDim.x;
+	int i = blockIdx.x * blockDim.x + tid;
+	for (; i < xLength; i += totalThreads) {
+		int yOffset2 = yOffset + ((i / xElementWiseStride)% yLength) * yElementWiseStride;
+        T val = x[i];
+        T yVal = y[yOffset2];
+        result[i] = op(val,yVal);
+		//result[i] = op(x[i],y[yOffset2]);
 	}
-	else {
-		for (int i = 0; i < tads; i++) {
-			int xOffset2  = offset(i, xShapeInfo,dimension,dimensionLength,xTadInfo);
-			int xIdx = xOffset2 +  tid * elementWiseStride(xShapeInfo);
-			if(length(xShapeInfo) <= xIdx)
-				break;
-			int resultIdx = xIdx;
-			result[resultIdx] = op(x[xIdx],y[tid * elementWiseStride(yShapeInfo)]);
-
-		}
-	}
-
 
 }
 

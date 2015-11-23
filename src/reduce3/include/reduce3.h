@@ -125,11 +125,6 @@ __device__ void transform(
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength) {
-
-
-	printf("GPU INFO %d %d %d %d \n",gpuInformation[0],gpuInformation[1],gpuInformation[2],gpuInformation[3]);
-
-	printf("Starting block %d and tid %d\n",blockIdx.x,threadIdx.x);
 	int nIsPow2 = (n % 2 == 0);
 	/**
 	 * Gpu information for the problem
@@ -349,8 +344,6 @@ __device__ void transform(
 				T val2 = dy[valueYOffset];
 				sPartials[tid] = val;
 				sPartials[(1 + tid) * 2] = val2;
-				printf("X offset is %d y offset is %d for tad %d with x element wise stride %d and y elementwise stride %d\n",blockOffset,yBlockOffset,blockIdx.x,xElementWiseStride,yElementWiseStride);
-				printf("Initialized %f for x and %f for y on block %d with tid %d\n",val,val2,blockIdx.x,tid);
 			}
 
 			__syncthreads();
@@ -359,12 +352,10 @@ __device__ void transform(
 			if(tid == 0) {
 				curr = startValue;
 				for(int j = 0; j < xLength; j++) {
-					printf("Updating with x val %f and y val %f on tad index %d and index %d\n",sPartials[j],sPartials[j * 2],tadIndex,j);
 					curr = update(curr,op(sPartials[j],sPartials[(1 + j) * 2],extraParams),extraParams);
 				}
 
 				result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
-				printf("Set result for %d to be %f with x length %d \n",tadIndex,curr,xLength);
 			}
 
 
