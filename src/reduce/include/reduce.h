@@ -249,45 +249,20 @@ __device__ void transform(
 
 
 	T reduction = extraParams[0];
-
-
 	if(tid == 0) {
-		xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-		resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
-		resultScalar = isScalar(resultShapeInfo);
-		currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
-		endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
+		int resultRank = rank(resultShapeInfo);
+		if(resultRank == 2) {
+			int *shape2 = shape(resultShapeInfo);
+			if(shape2[0] == 1 && shape2[1] == 1)
+				resultScalar = 1;
+			else
+				resultScalar = 0;
+		}
+		else
+			resultScalar = 0;
 		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-		xShape = shape(xShapeInfo);
-		xRank = rank(xShapeInfo);
-		xOffset = offset(xShapeInfo);
-		xElementWiseStride = elementWiseStride(xShapeInfo);
 
-		//reduction on whole buffer
-		if(resultScalar)
-			xLength = n;
-
-		else
-			xLength = prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
-
-		valueOffset = tadOffset(xShapeInfo,currentBlockOffset);
-		double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
-		if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
-			tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
-		else
-			tadsForBlock = 1;
-		if(tadsForBlock < 1)
-			tadsForBlock = 1;
-		//set a constant start value
-		startValue = reduction;
-		//when the number of elements per tad is greater than grid size, we need to compute partial
-		//reductions when initializing
-		if(xLength > gpuInformation[1])
-			elementsPerThread = xLength / gpuInformation[1];
-		else
-			elementsPerThread = 1;
 	}
-
 	__syncthreads();
 
 	T curr;
@@ -327,11 +302,55 @@ __device__ void transform(
 
 		// write result for this block to global mem
 		if (tid == 0) {
-			result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
+			if(blockIdx.x < resultLength) {
+				result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
+			}
+
 		}
 	}
 
 	else if(!resultScalar) {
+
+
+		if(tid == 0) {
+			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
+			resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
+			resultScalar = isScalar(resultShapeInfo);
+			currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
+			endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
+			resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
+			xShape = shape(xShapeInfo);
+			xRank = rank(xShapeInfo);
+			xOffset = offset(xShapeInfo);
+			xElementWiseStride = elementWiseStride(xShapeInfo);
+
+			//reduction on whole buffer
+			if(resultScalar)
+				xLength = n;
+
+			else
+				xLength = prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
+
+			valueOffset = tadOffset(xShapeInfo,currentBlockOffset);
+			double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
+			if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
+				tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
+			else
+				tadsForBlock = 1;
+			if(tadsForBlock < 1)
+				tadsForBlock = 1;
+			//set a constant start value
+			startValue = reduction;
+			//when the number of elements per tad is greater than grid size, we need to compute partial
+			//reductions when initializing
+			if(xLength > gpuInformation[1])
+				elementsPerThread = xLength / gpuInformation[1];
+			else
+				elementsPerThread = 1;
+		}
+
+
+
 		//number of tads per block to process
 		for(int i = 0; i < tadsForBlock; i++) {
 			int tadIndex = tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
@@ -392,7 +411,7 @@ __device__ void transform(
 
 
 
-	if(tid == 0) {
+	if(!resultScalar && tid == 0) {
 		freePermuteInfo(xTadInfo);
 		freePermuteInfo(resultTadInfo);
 	}

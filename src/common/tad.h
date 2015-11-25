@@ -10,6 +10,7 @@
 
 #define MAX_NUM_THREADS 1024
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 /**
  * Shape information approximating
@@ -692,7 +693,6 @@ __device__ __host__ TADPermuteInfo tadInfo(int *xShapeInfo,int *dimension,int di
 	int *permutedShape = doPermuteSwap(rank(xShapeInfo),shape(xShapeInfo),newPermuteDims);
 	int *permutedStrides = doPermuteSwap(rank(xShapeInfo),stride(xShapeInfo),newPermuteDims);
 
-	//MY_TYPE a = { .flag = true, .value = 123, .stuff = 0.456 };
 	TADPermuteInfo info = {
 			tensorShape,
 			xRank,
@@ -712,13 +712,15 @@ __device__ __host__ TADPermuteInfo tadInfo(int *xShapeInfo,int *dimension,int di
 }
 
 __host__ __device__ void freePermuteInfo(TADPermuteInfo info) {
+	free(info.tensorShape);
+	free(info.reverseDimensions);
+	free(info.rangeRet);
+	free(info.remove);
+	free(info.zeroDimension);
 	free(info.newPermuteDims);
 	free(info.permutedShape);
-	free(info.rangeRet);
 	free(info.permutedStrides);
-	free(info.remove);
-	free(info.reverseDimensions);
-	free(info.zeroDimension);
+
 }
 
 
