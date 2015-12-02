@@ -139,7 +139,7 @@ __device__ void transform(
 		int *resultShapeInfo
 		,int *gpuInformation,
 		int *dimension,
-		int dimensionLength) {
+		int dimensionLength,int postProcessOrNot) {
 
 
 	int nIsPow2 = (n % 2 == 0);
@@ -241,7 +241,11 @@ __device__ void transform(
 
 		// write result for this block to global mem
 		if (tid == 0) {
-			result[blockIdx.x] = sPartials[0];
+			if(postProcessOrNot)
+				result[blockIdx.x] = postProcess(sPartials[0],xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+			else {
+				result[blockIdx.x] = sPartials[0];
+			}
 		}
 	}
 
@@ -302,7 +306,7 @@ __device__ void transform(
 					}
 
 					else {
-						valueOffset = blockOffset  +(tid * i * xElementWiseStride);
+						valueOffset = blockOffset  + (tid * i * xElementWiseStride);
 						//break at the end
 						if(valueOffset >= n)
 							break;
@@ -329,7 +333,12 @@ __device__ void transform(
 				for(int j = 0; j < xLength; j++) {
 					curr = update(curr,op(sPartials[j],extraParams),extraParams);
 				}
-				result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+				if(postProcessOrNot)
+					result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+				else {
+					result[tadIndex] = curr;
+
+				}
 			}
 
 
@@ -361,7 +370,7 @@ __global__ void transform_double(
 		int *resultShapeInfo
 		,int *gpuInformation,
 		int *dimension,
-		int dimensionLength) {
+		int dimensionLength,int postProcessOrNot) {
 	transform<double>(
 			n,
 			dx,
@@ -371,7 +380,7 @@ __global__ void transform_double(
 			resultShapeInfo,
 			gpuInformation,
 			dimension,
-			dimensionLength);
+			dimensionLength,postProcessOrNot);
 }
 
 
@@ -385,7 +394,7 @@ __global__ void transform_float(
 		int *resultShapeInfo
 		,int *gpuInformation,
 		int *dimension,
-		int dimensionLength) {
+		int dimensionLength,int postProcessOrNot) {
 	transform<float>(n,
 			dx,
 			xShapeInfo,
@@ -393,5 +402,5 @@ __global__ void transform_float(
 			result,
 			resultShapeInfo,
 			gpuInformation,
-			dimension,dimensionLength);
+			dimension,dimensionLength,postProcessOrNot);
 }
