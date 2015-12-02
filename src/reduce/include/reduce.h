@@ -210,7 +210,6 @@ __device__ void transform(
 	}
 	__syncthreads();
 
-	printf("Result scalar %d\n",resultScalar);
 
 
 	T curr;
@@ -227,8 +226,6 @@ __device__ void transform(
 		while (i * xElementWiseStride < n)	{
 			curr = dx[i * xElementWiseStride];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
-            printf("Setting value %d to %f on block %d\n",i,reduction,blockIdx.x);
-
 			// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
 			if (nIsPow2 && i + blockSize < n) {
 				curr = dx[i + blockSize];
@@ -242,7 +239,6 @@ __device__ void transform(
 
 		// each thread puts its local sum into shared memory
 		sPartials[tid] = reduction;
-		printf("Setting %d to %f\n",tid,reduction);
 		__syncthreads();
 
 		T ** sPartialsRef = (T **) &sPartials;
@@ -252,7 +248,7 @@ __device__ void transform(
 
 		// write result for this block to global mem
 		if (tid == 0) {
-			result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
+			result[blockIdx.x] = sPartials[0];
 		}
 	}
 
