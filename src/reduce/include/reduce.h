@@ -226,13 +226,6 @@ __device__ void transform(
 		while (i * xElementWiseStride < n)	{
 			curr = dx[i * xElementWiseStride];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
-			// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
-			if (nIsPow2 && i + blockSize < n) {
-				curr = dx[i + blockSize];
-				reduction = update(reduction,op(curr,extraParams),extraParams);
-
-			}
-
 			i += gridSize;
 		}
 
@@ -253,8 +246,6 @@ __device__ void transform(
 	}
 
 	else if(!resultScalar) {
-
-
 		if(tid == 0) {
 			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
 			resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
