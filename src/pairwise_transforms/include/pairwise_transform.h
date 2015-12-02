@@ -1,5 +1,5 @@
 #include <math.h>
-
+#include <stdio.h>
 //x[i] and y[i]
 template <typename T>
 __device__ T op(T d1,T d2,T *params);
@@ -41,6 +41,16 @@ __device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,i
 		for (; i < n; i += totalThreads) {
 			result[i * incz] = op(dx[i * incx],dy[i * incy],params);
 		}
+	}
+}
+
+
+extern "C"
+__global__ void printShapeBuffer(int n,int *buff) {
+	int tid = threadIdx.x;
+	int i = blockIdx.x * blockDim.x + tid;
+	if(i < n) {
+		printf("Buff item %d is %d\n",i,buff[i]);
 	}
 }
 

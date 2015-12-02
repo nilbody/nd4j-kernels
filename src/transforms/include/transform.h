@@ -22,6 +22,17 @@ __device__ void transform(int n,int idx,T *dy,int incy,T *params,T *result,int b
 template <> double op<double>(double d1,double *params);
 template <> float op<float>(float d1,float *params);
 
+
+extern "C"
+__global__ void printShapeBuffer(int n,int *buff) {
+	int tid = threadIdx.x;
+	int i = blockIdx.x * blockDim.x + tid;
+	if(i < n) {
+		printf("Buff item %d is %d\n",i,buff[i]);
+	}
+}
+
+
 extern "C"
 __global__ void transform_double(int n,int idx,double *dy,int incy,double *params,double *result,int blockSize) {
 	transform<double>(n,idx,dy,incy,params,result,blockSize);

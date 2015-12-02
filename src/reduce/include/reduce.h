@@ -65,6 +65,8 @@ __device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
 		}
 		__syncthreads();
 	}
+
+	printf("Aggregate %f for tid %d\n",sPartials[tid],tid);
 }
 
 
@@ -97,79 +99,16 @@ __device__ void initializeShared(T *extraParams,T** sPartials,int sMemSize) {
 	}
 }
 
-template <typename T>
-__global__ void reduceTad(
-		T *data,
-		int index
-		,int *tadShapeInfo
-		,T *extraParams
-		,int *gpuInformation
-		,TADPermuteInfo xTadInfo
-		,int *dimension
-		,int dimensionLength,
-		int xLength,
-		T *result) {
 
-	SharedMemory<T> val;
-	volatile T *sPartials = val.getPointer();
+
+extern "C"
+__global__ void printShapeBuffer(int n,int *buff) {
 	int tid = threadIdx.x;
-	if(tid == 0) {
-		int sMemSize = gpuInformation[2];
-		int sPartialsLength = sMemSize / sizeof(T);
-		for(int i = 0; i < sPartialsLength; i++) {
-			sPartials[i] = extraParams[0];
-		}
+	int i = blockIdx.x * blockDim.x + tid;
+	if(i < n) {
+		printf("Buff item %d is %d\n",i,buff[i]);
 	}
-
-	__syncthreads();
-	int nIsPow2 = (xLength % 2 == 0);
-
-	int blockSize = gpuInformation[0];
-
-	// perform first level of reduction,
-	// reading from global memory, writing to shared memory
-	unsigned int i = offset(tadShapeInfo) +   blockIdx.x   *  elementWiseStride(tadShapeInfo) + tid;
-	unsigned int gridSize = blockDim.x * gridDim.x *  elementWiseStride(tadShapeInfo);
-
-	T reduction = extraParams[0];
-	T curr;
-
-	// we reduce multiple elements per thread.  The number is determined by the
-	// number of active thread blocks (via gridDim).  More blocks will result
-	// in a larger gridSize and therefore fewer elements per thread
-	while (i < xLength && i %  elementWiseStride(tadShapeInfo) == 0)	{
-		curr = data[i];
-		reduction = update(reduction,op(curr,extraParams),extraParams);
-
-
-		// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
-		if (nIsPow2 && i + blockSize < xLength) {
-			curr = data[i + blockSize];
-			reduction = update(reduction,op(curr,extraParams),extraParams);
-
-		}
-
-		i += gridSize;
-	}
-
-
-	// each thread puts its local sum into shared memory
-	sPartials[tid] = reduction;
-	__syncthreads();
-
-	T ** sPartialsRef = (T **) &sPartials;
-	aggregatePartials(sPartialsRef,tid,extraParams);
-
-	// write result for this block to global mem
-	if (tid == 0) {
-		result[index] = postProcess(sPartials[0],xLength,offset(tadShapeInfo),data, elementWiseStride(tadShapeInfo),extraParams,result);
-	}
-
-
 }
-
-
-
 
 
 /**
@@ -222,8 +161,11 @@ __device__ void transform(
 	//shared memory space for storing intermediate results
 	SharedMemory<T> val;
 	volatile T *sPartials = val.getPointer();
-	sPartials[tid] = extraParams[0];
+	int numElements = gpuInformation[2] / sizeof(T);
+	for (int i = tid; i < numElements; i += blockDim.x)
+		sPartials[i] = extraParams[0];
 	__syncthreads();
+
 
 
 	//starting index for tad
@@ -248,12 +190,12 @@ __device__ void transform(
 	__shared__ T startValue;
 
 
+
+
 	T reduction = extraParams[0];
 	if(tid == 0) {
-		int resultRank = rank(resultShapeInfo);
-		if(resultRank == 2) {
-			int *shape2 = shape(resultShapeInfo);
-			if(shape2[0] == 1 && shape2[1] == 1)
+		if(dimensionLength == 1) {
+			if(dimension[0] == MAX_DIMENSION)
 				resultScalar = 1;
 			else
 				resultScalar = 0;
@@ -261,9 +203,15 @@ __device__ void transform(
 		else
 			resultScalar = 0;
 		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
+		xOffset = offset(xShapeInfo);
+		xElementWiseStride = elementWiseStride(xShapeInfo);
+
 
 	}
 	__syncthreads();
+
+	printf("Result scalar %d\n",resultScalar);
+
 
 	T curr;
 
@@ -273,14 +221,13 @@ __device__ void transform(
 		unsigned int i = xOffset +   blockIdx.x   *  xElementWiseStride + tid;
 		unsigned int gridSize = blockDim.x * gridDim.x *  xElementWiseStride;
 
-
 		// we reduce multiple elements per thread.  The number is determined by the
 		// number of active thread blocks (via gridDim).  More blocks will result
 		// in a larger gridSize and therefore fewer elements per thread
-		while (i < n && i %  xElementWiseStride == 0)	{
-			curr = dx[i];
+		while (i * xElementWiseStride < n)	{
+			curr = dx[i * xElementWiseStride];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
-
+            printf("Setting value %d to %f on block %d\n",i,reduction,blockIdx.x);
 
 			// ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
 			if (nIsPow2 && i + blockSize < n) {
@@ -295,17 +242,17 @@ __device__ void transform(
 
 		// each thread puts its local sum into shared memory
 		sPartials[tid] = reduction;
+		printf("Setting %d to %f\n",tid,reduction);
 		__syncthreads();
 
 		T ** sPartialsRef = (T **) &sPartials;
 		aggregatePartials(sPartialsRef,tid,extraParams);
 
+
+
 		// write result for this block to global mem
 		if (tid == 0) {
-			if(blockIdx.x < resultLength) {
-				result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
-			}
-
+			result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
 		}
 	}
 
@@ -401,9 +348,6 @@ __device__ void transform(
 
 			if(blockOffset >= n)
 				break;
-
-
-
 		}
 
 
@@ -464,4 +408,3 @@ __global__ void transform_float(
 			gpuInformation,
 			dimension,dimensionLength);
 }
-

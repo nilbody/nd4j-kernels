@@ -8,6 +8,8 @@
 #ifndef BROADCASTING_H_
 #define BROADCASTING_H_
 
+#define MAX_THREADS 512
+
 #include <math.h>
 #include <stdio.h>
 
@@ -37,83 +39,27 @@ __device__ void transform(
 		int dimensionLength,
 		int *gpuInformation) {
 
-	int length2 = shapeInfoLength(rank(xShapeInfo));
 
-
-	/**
-	 * Gpu information for the problem
-	 */
-	volatile int tid = threadIdx.x;
-
-
-	volatile __shared__ int *xShape;
-	volatile __shared__ int xRank;
-	volatile __shared__ int xElementWiseStride;
-	volatile __shared__ int xOffset;
-
-
-	__shared__ int yElementWiseStride;
-	__shared__ int yOffset;
+	int xElementWiseStride = elementWiseStride(xShapeInfo);
+	int xOffset = offset(xShapeInfo);
+	int yElementWiseStride = elementWiseStride(yShapeInfo);
+	int yOffset = offset(yShapeInfo);
 
 
 
 	//length for the tad
-	volatile __shared__  int yLength;
-
+	int yLength = length(yShapeInfo);
 	//length for the tad
-	volatile __shared__  int xLength;
+	int xLength  = length(xShapeInfo);
 
-
-
-	volatile __shared__  int resultLength;
-
-	volatile __shared__  int tadsForBlock;
-
-	volatile __shared__  int elementsPerThread;
-
-
-	//only compute the tad indexes once
-	__shared__ TADPermuteInfo xTadInfo;
-
-
-
-	//number of times a loop through the broadcast will be made wrt the length of y and x
-	volatile __shared__ int tads;
-
-
-
-
-	if(tid == 0) {
-		xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-		resultLength = length(resultShapeInfo);
-		//initialize x
-		xShape = shape(xShapeInfo);
-		xOffset = offset(xShapeInfo);
-		xRank = rank(xShapeInfo);
-		xLength = length(xShapeInfo);
-		xElementWiseStride = elementWiseStride(xShapeInfo);
-		//initialize y
-		yLength = length(yShapeInfo);
-
-		yOffset = offset(yShapeInfo);
-		yElementWiseStride = elementWiseStride(yShapeInfo);
-	}
-
-
-	__syncthreads();
-
-
-	int totalThreads = gridDim.x * blockDim.x;
-	int i = blockIdx.x * blockDim.x + tid;
-	for (; i < xLength; i += totalThreads) {
+	int resultLength = length(resultShapeInfo);
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+			i < resultLength;
+			i += blockDim.x * gridDim.x) {
 		int yOffset2 = yOffset + ((i / xElementWiseStride)% yLength) * yElementWiseStride;
-        T val = x[i];
-        T yVal = y[yOffset2];
-        result[i] = op(val,yVal);
-	}
+		if(i < resultLength)
+			result[i] = op(x[i],y[yOffset2]);
 
-	if(tid == 0) {
-		freePermuteInfo(xTadInfo);
 	}
 
 }

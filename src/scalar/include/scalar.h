@@ -16,7 +16,14 @@ __device__ void transform(int n, int idx,T dx,T *dy,int incy,T *params,T *result
 
 }
 
-
+extern "C"
+__global__ void printShapeBuffer(int n,int *buff) {
+	int tid = threadIdx.x;
+	int i = blockIdx.x * blockDim.x + tid;
+	if(i < n) {
+		printf("Buff item %d is %d\n",i,buff[i]);
+	}
+}
 
 
 extern "C"

@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#define MAX_DIMENSION  0x7fffffff
+
 /**
  * Shape information approximating
  * the information on an ndarray
