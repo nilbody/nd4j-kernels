@@ -1,8 +1,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "tad.h"
-#include "indexing.h"
+#include <tad.h>
+#include <indexing.h>
 
 template <typename T>
 struct  IndexValue {
@@ -22,6 +22,48 @@ struct  IndexValue <float> {
 	int index;
 };
 
+// This is the un-specialized struct.  Note that we prevent instantiation of this
+// struct by putting an undefined symbol in the function body so it won't compile.
+template <typename T>
+struct SharedIndexValue
+{
+	// Ensure that we won't compile any un-specialized types
+	__device__ T* getPointer()
+	{
+		extern __device__ void error(void);
+		error();
+		return NULL;
+	}
+};
+
+
+
+// Following are the specializations for the following types.
+// int, uint, char, uchar, short, ushort, long, ulong, bool, float, and double
+// One could also specialize it for user-defined types.
+
+template <>
+struct SharedIndexValue <float>
+{
+	__device__ IndexValue<float>* getPointer()
+	{
+		extern __shared__ IndexValue<float> s_int2[];
+		return s_int2;
+	}
+};
+// Following are the specializations for the following types.
+// int, uint, char, uchar, short, ushort, long, ulong, bool, float, and double
+// One could also specialize it for user-defined types.
+
+template <>
+struct SharedIndexValue <double>
+{
+	__device__ IndexValue<double>* getPointer()
+	{
+		extern __shared__ IndexValue<double> s_int[];
+		return s_int;
+	}
+};
 
 
 //an op for the kernel
@@ -147,6 +189,9 @@ __device__ void transform(
 	int numElements =  gpuInformation[2] / sizeof(IndexValue<T>);
 	//shared memory space for storing intermediate results
 	IndexValue<T> *sPartials;
+    SharedIndexValue<T> holder;
+
+    sPartials = holder.getPointer();
 
 	for (int i = tid; i < numElements; i += blockDim.x) {
 		IndexValue<T> val = {extraParams[0],i};
@@ -327,9 +372,9 @@ __device__ void transform(
 					curr = update(curr,op(sPartials[j],extraParams),extraParams);
 				}
 				if(postProcessOrNot)
-					result[tadIndex] = (T) postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result).index;
+					result[tadIndex] = (T) (postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result).index - blockOffset) / xElementWiseStride;
 				else {
-					result[tadIndex] = curr.index;
+					result[tadIndex] = (curr.index - blockOffset) / xElementWiseStride;
 				}
 			}
 
