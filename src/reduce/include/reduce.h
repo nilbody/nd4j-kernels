@@ -66,7 +66,6 @@ __device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
 		__syncthreads();
 	}
 
-	printf("Aggregate %f for tid %d\n",sPartials[tid],tid);
 }
 
 
@@ -212,19 +211,20 @@ __device__ void transform(
 
 
 
+
 	T curr;
 
 	if(resultScalar) {
 		int blockSize = gpuInformation[0];
 
-		unsigned int i = xOffset +   blockIdx.x   *  xElementWiseStride + tid;
+		unsigned int i =    blockIdx.x   *  xElementWiseStride + tid;
 		unsigned int gridSize = blockDim.x * gridDim.x *  xElementWiseStride;
 
 		// we reduce multiple elements per thread.  The number is determined by the
 		// number of active thread blocks (via gridDim).  More blocks will result
 		// in a larger gridSize and therefore fewer elements per thread
-		while (i * xElementWiseStride < n)	{
-			curr = dx[i * xElementWiseStride];
+		while (xOffset + i  < n)	{
+			curr = dx[xOffset + i];
 			reduction = update(reduction,op(curr,extraParams),extraParams);
 			i += gridSize;
 		}
@@ -337,13 +337,9 @@ __device__ void transform(
 					result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
 				else {
 					result[tadIndex] = curr;
-
 				}
 			}
 
-
-			if(blockOffset >= n)
-				break;
 		}
 
 

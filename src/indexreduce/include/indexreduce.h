@@ -1,86 +1,69 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sharedmem.h>
-#include <tad.h>
+#include "tad.h"
+#include "indexing.h"
+
+template <typename T>
+struct  IndexValue {
+	T value;
+	int index;
+} ;
+
+template <>
+struct IndexValue<double> {
+	double value;
+	int index;
+};
+
+template <>
+struct  IndexValue <float> {
+	float value;
+	int index;
+};
+
 
 
 //an op for the kernel
 template<typename T>
-__device__ T op(T d1,T d2,T *extraParams);
+__device__ IndexValue<T> op(IndexValue<T> val,T *extraParams);
 
 //calculate an update of the reduce operation
 template<typename T>
-__device__ T update(T old,T opOutput,T *extraParams);
-
+__device__ IndexValue<T> update(IndexValue<T> old,IndexValue<T> opOutput,T *extraParams);
+//invoked when combining two kernels
+template<typename T>
+__device__ IndexValue<T> merge(IndexValue<T> f1, IndexValue<T> f2,T *extraParams);
 
 //post process result (for things like means etc)
 template<typename T>
-__device__ T postProcess(T reduction,int n,int xOffset,T *dx,int incx,T *extraParams,T *result);
-
-template<typename T>
-__device__ T merge(T old,T opOutput,T *extraParams);
-
-template <typename T>
-__device__ T doBlock(
-		int n,
-		T *sPartials,
-		T *dx,
-		int xOffset,
-		int incx,
-		T *dy,
-		int yOffset,
-		int incy,
-		T *extraParams) {
-	T reduce = extraParams[0];
-	int tid = threadIdx.x;
-	int totalThreads = gridDim.x * blockDim.x;
-	int start = blockDim.x * blockIdx.x + tid;
-	for (int i = start; i < n; i += totalThreads) {
-		int currIdx = xOffset + i * incx;
-		int currYIdx = yOffset + i * incy;
-		T curr = dx[currIdx];
-		T currY = dy[currYIdx];
-		reduce = update(reduce,op(curr,currY,extraParams),extraParams);
-	}
-
-	return reduce;
-}
+__device__ IndexValue<T> postProcess(IndexValue<T> reduction,int n,int xOffset,T *dx,int incx,T *extraParams,T *result);
 
 
 template<typename T>
-__global__ void doReduce(
-		T *dx
-		,T *extraParams
-		,int n
-		,int incx
-		,int xOffset,
-		T *dy,
-		int incy,
-		int yOffset,
-		T *result,
-		int resultOffset) {
+__device__ T op(IndexValue<T> d1,IndexValue<T> d2,T *extraParams);
 
-	SharedMemory<T> val;
-	T *sPartials = val.getPointer();
-	int tid = threadIdx.x;
-	T reduce = doBlock(n,sPartials,dx,xOffset,incx,dy,yOffset,incy,extraParams);
-	sPartials[tid] = reduce;
-	__syncthreads();
 
-	aggregatePartials(sPartials,tid,extraParams);
+template <>  IndexValue<double> merge<double>(IndexValue<double>  opOutput,IndexValue<double> other,double *extraParams);
+template <> IndexValue<double> update<double>(IndexValue<double> old,IndexValue<double> opOutput,double *extraParams);
+template <> IndexValue<double> op<double>(IndexValue<double> d1,double *extraParams);
+template <> IndexValue<double> postProcess<double>(IndexValue<double> reduction,int n,int xOffset,double *dx,int incx,double *extraParams,double *result);
 
-	if (tid == 0) {
-		result[resultOffset] = postProcess(sPartials[0],n,xOffset,dx,incx,extraParams,result);
-	}
-}
+
+template <> IndexValue<float> merge<float>(IndexValue<float> old,IndexValue<float> opOutput,float *extraParams);
+template <> IndexValue<float> update<float>(IndexValue<float> old,IndexValue<float> opOutput,float *extraParams);
+template <> IndexValue<float> op<float>(IndexValue<float> d1,float *extraParams);
+template <> IndexValue<float> postProcess<float>(IndexValue<float> reduction,int n,int xOffset,float *dx,int incx,float *extraParams,float *result);
+
+
+
 
 template<typename T>
-__device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
+__device__ void aggregatePartials(IndexValue<T> **sPartialsRef,int tid,T *extraParams) {
 	// start the shared memory loop on the next power of 2 less
 	// than the block size.  If block size is not a power of 2,
 	// accumulate the intermediate sums in the remainder range.
-	T *sPartials = *sPartialsRef;
+	IndexValue<T> *sPartials = *sPartialsRef;
 	int floorPow2 = blockDim.x;
 
 	if (floorPow2 & (floorPow2 - 1)) {
@@ -88,44 +71,65 @@ __device__ void aggregatePartials(T **sPartialsRef,int tid,T *extraParams) {
 			floorPow2 &= floorPow2 - 1;
 		}
 		if (tid >= floorPow2) {
-			sPartials[tid - floorPow2] = update(sPartials[tid - floorPow2],sPartials[tid],extraParams);
+			IndexValue<T> prev = sPartials[tid - floorPow2];
+			IndexValue<T> curr = sPartials[tid];
+			sPartials[tid - floorPow2] = update(prev,curr,extraParams);
 		}
 		__syncthreads();
 	}
 
 	for (int activeThreads = floorPow2 >> 1;activeThreads;	activeThreads >>= 1) {
 		if (tid < activeThreads) {
-			sPartials[tid] = update(sPartials[tid],sPartials[tid + activeThreads],extraParams);
+			IndexValue<T> curr = sPartials[tid];
+			IndexValue<T> next = sPartials[tid + activeThreads];
+			sPartials[tid] = update(curr,next,extraParams);
 		}
 		__syncthreads();
+	}
+
+}
+
+
+
+extern "C"
+__global__ void printShapeBuffer(int n,int *buff) {
+	int tid = threadIdx.x;
+	int i = blockIdx.x * blockDim.x + tid;
+	if(i < n) {
+		printf("Buff item %d is %d\n",i,buff[i]);
 	}
 }
 
 
 /**
-
-Perform a reduction
-@param n the number of elements
-@param xOffset the starting offset
-@param dx the data to perform the reduction on
-@param incx the increment on which to perform the reduction
-@param extraParams extra parameters used for calculations
-@param result where to store the result of the reduction
+ * @param n n is the number of
+ *        elements to loop through
+ * @param dx the data to operate on
+ * @param xVectorInfo the meta data for the vector:
+ *                              0 is the offset
+ *                              1 is the increment/stride
+ *                              2 is the real length of the buffer (n and dx.length won't always be the same)
+ *                              3 is the element wise stride for the buffer
+ *                              4 is the number of elements it takes to get to the next row/column/tensor
+ * @param gpuInformation
+ *                              0 is the block size
+ *                              1 is the grid size
+ *                              2 is the shared memory size
+ * @param problemDefinition
+ *                          0 is the number of elements per vector
+ *                          1 is the number of vectors
  */
 template<typename T>
 __device__ void transform(
 		int n
 		,T *dx
-		,int *xShapeInfo,
-		T *dy,
-		int *yShapeInfo
+		,int *xShapeInfo
 		,T *extraParams
 		,T *result,
 		int *resultShapeInfo
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength,int postProcessOrNot) {
-	int nIsPow2 = (n % 2 == 0);
 	/**
 	 * Gpu information for the problem
 	 */
@@ -140,35 +144,15 @@ __device__ void transform(
 	__shared__ int xElementWiseStride;
 	__shared__ int xOffset;
 
-
-	__shared__ int *yShape;
-	__shared__ int yRank;
-	__shared__ int yElementWiseStride;
-	__shared__ int yOffset;
-
-
-
+	int numElements =  gpuInformation[2] / sizeof(IndexValue<T>);
 	//shared memory space for storing intermediate results
-	SharedMemory<T> val;
-	volatile T *sPartials = val.getPointer();
-	int numElements = gpuInformation[2] / sizeof(T);
-	for (int i = tid; i < numElements; i += blockDim.x)
-		sPartials[i] = extraParams[0];
+	IndexValue<T> *sPartials;
+
+	for (int i = tid; i < numElements; i += blockDim.x) {
+		IndexValue<T> val = {extraParams[0],i};
+		sPartials[i] = val;
+	}
 	__syncthreads();
-
-
-	sPartials[tid] = extraParams[0];
-	sPartials[(1 + tid) * 2] = extraParams[0];
-	__syncthreads();
-
-
-	//starting index for tad
-	__shared__ volatile int currentYBlockOffset;
-	//ending index for tad
-	__shared__ volatile int endingYOffset;
-	//length for the tad
-	__shared__ volatile int yLength;
-
 
 
 
@@ -179,8 +163,6 @@ __device__ void transform(
 	//length for the tad
 	__shared__ volatile int xLength;
 
-
-
 	__shared__ volatile int resultLength;
 
 	__shared__ volatile int tadsForBlock;
@@ -190,15 +172,15 @@ __device__ void transform(
 
 	//only compute the tad indexes once
 	__shared__ TADPermuteInfo xTadInfo;
-	__shared__ TADPermuteInfo yTadInfo;
 	__shared__ TADPermuteInfo resultTadInfo;
+	int valueOffset;
 
-	int valueOffset,valueYOffset;
-
-	__shared__ T startValue;
+	__shared__ IndexValue<T> startValue;
 
 
-	T reduction = extraParams[0];
+
+
+	IndexValue<T> reduction = {extraParams[0],0};
 	if(tid == 0) {
 		if(dimensionLength == 1) {
 			if(dimension[0] == MAX_DIMENSION)
@@ -212,33 +194,29 @@ __device__ void transform(
 		xOffset = offset(xShapeInfo);
 		xElementWiseStride = elementWiseStride(xShapeInfo);
 
-		yElementWiseStride = elementWiseStride(yShapeInfo);
-		yOffset = offset(yShapeInfo);
+
 	}
-
-
 	__syncthreads();
 
-	T curr,currY;
+
+
+
+	IndexValue<T> curr;
+	int currIdx;
 
 	if(resultScalar) {
-		int blockSize = gpuInformation[0];
-
-		unsigned int i = xOffset +   blockIdx.x   *  xElementWiseStride + tid;
-		unsigned int j = yOffset +   blockIdx.x   *  yElementWiseStride + tid;
+		unsigned int i =    blockIdx.x   *  xElementWiseStride + tid;
 		unsigned int gridSize = blockDim.x * gridDim.x *  xElementWiseStride;
-		unsigned int gridSizeY = blockDim.x * gridDim.x *  yElementWiseStride;
-
 
 		// we reduce multiple elements per thread.  The number is determined by the
 		// number of active thread blocks (via gridDim).  More blocks will result
 		// in a larger gridSize and therefore fewer elements per thread
-		while (i * xElementWiseStride < xLength && j * yElementWiseStride < yLength)	{
-			curr = dx[i];
-			currY = dy[j];
-			reduction = update(reduction,op(curr,currY,extraParams),extraParams);
+		while (xOffset + i  < n)	{
+			currIdx = xOffset + i;
+			IndexValue<T> indexVal = {dx[xOffset + i],currIdx};
+			curr = indexVal;
+			reduction = update(reduction,op(curr,extraParams),extraParams);
 			i += gridSize;
-			j += gridSizeY;
 		}
 
 
@@ -246,15 +224,17 @@ __device__ void transform(
 		sPartials[tid] = reduction;
 		__syncthreads();
 
-		T ** sPartialsRef = (T **) &sPartials;
+		IndexValue<T> ** sPartialsRef = (IndexValue<T> **) &sPartials;
 		aggregatePartials(sPartialsRef,tid,extraParams);
+
+
 
 		// write result for this block to global mem
 		if (tid == 0) {
 			if(postProcessOrNot)
-				result[blockIdx.x] = postProcess(sPartials[0],xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+				result[blockIdx.x] = (T) postProcess(sPartials[0],xLength,xOffset,dx, xElementWiseStride,extraParams,result).index;
 			else {
-				result[blockIdx.x] = sPartials[0];
+				result[blockIdx.x] =  sPartials[0].index;
 			}
 		}
 	}
@@ -262,32 +242,15 @@ __device__ void transform(
 	else if(!resultScalar) {
 		if(tid == 0) {
 			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-			yTadInfo  = tadInfo(yShapeInfo,dimension,dimensionLength);
 			resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
-
-
 			resultScalar = isScalar(resultShapeInfo);
 			currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
 			endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
 			resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-
-			//initialize x
 			xShape = shape(xShapeInfo);
 			xRank = rank(xShapeInfo);
 			xOffset = offset(xShapeInfo);
 			xElementWiseStride = elementWiseStride(xShapeInfo);
-
-
-			//initialize y
-			yShape = shape(yShapeInfo);
-			yRank = rank(yShapeInfo);
-			yOffset = offset(yShapeInfo);
-			yElementWiseStride = elementWiseStride(yShapeInfo);
-
-
-			currentYBlockOffset = offset(blockIdx.x, yShapeInfo,dimension,dimensionLength,yTadInfo);
-			endingYOffset = offset(blockIdx.x + 1 ,yShapeInfo,dimension,dimensionLength,yTadInfo);
-
 
 			//reduction on whole buffer
 			if(resultScalar)
@@ -314,40 +277,33 @@ __device__ void transform(
 				elementsPerThread = 1;
 		}
 
-		__syncthreads();
+
 
 		//number of tads per block to process
 		for(int i = 0; i < tadsForBlock; i++) {
 			int tadIndex = tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
 			int blockOffset = offset(tadIndex, xShapeInfo,dimension,dimensionLength,xTadInfo);
-			int blockYOffset = offset(tadIndex, yShapeInfo,dimension,dimensionLength,yTadInfo);
-
 			//concurrently load all elements in to shared memory
 			if(elementsPerThread > 1) {
 				for(int i = 0; i < elementsPerThread; i++) {
 					if(i > 0) {
 						valueOffset = blockOffset  +(tid * i * xElementWiseStride);
-						valueYOffset = blockYOffset + (tid * i * yElementWiseStride);
 						//break at the end
 						if(valueOffset >= n)
 							break;
 						T val = dx[valueOffset];
-						T yVal = dy[valueYOffset];
-						sPartials[tid] = update(sPartials[tid],op(val,yVal,extraParams),extraParams);
+						IndexValue<T> doOp = {val,valueOffset};
+						sPartials[tid] = update(sPartials[tid],op(doOp,extraParams),extraParams);
 					}
 
 					else {
-						valueOffset = blockOffset  +(tid * i * xElementWiseStride);
-						valueYOffset = blockYOffset + (tid * i * yElementWiseStride);
-
+						valueOffset = blockOffset  + (tid * i * xElementWiseStride);
 						//break at the end
 						if(valueOffset >= n)
 							break;
 						T val = dx[valueOffset];
-						T yVal = dy[valueYOffset];
-						printf("Comparing value x %f and y %f\n",val,yVal);
-						sPartials[tid] = val;
-						sPartials[(1 + tid)* 2] = yVal;
+						IndexValue<T> assign = {val,valueOffset};
+						sPartials[tid] = assign;
 					}
 
 
@@ -356,13 +312,10 @@ __device__ void transform(
 			}
 			else {
 				int blockOffset = currentBlockOffset;
-				int yBlockOffset = currentYBlockOffset;
 				valueOffset = blockOffset  + tid * xElementWiseStride;
-				valueYOffset = yBlockOffset + tid * yElementWiseStride;
 				T val = dx[valueOffset];
-				T val2 = dy[valueYOffset];
-				sPartials[tid] = val;
-				sPartials[(1 + tid) * 2] = val2;
+				IndexValue<T> assign = {val,valueOffset};
+				sPartials[tid] = assign;
 			}
 
 			__syncthreads();
@@ -371,16 +324,15 @@ __device__ void transform(
 			if(tid == 0) {
 				curr = startValue;
 				for(int j = 0; j < xLength; j++) {
-					curr = update(curr,op(sPartials[j],sPartials[(1 + j) * 2],extraParams),extraParams);
+					curr = update(curr,op(sPartials[j],extraParams),extraParams);
 				}
-
-				if(postProcessOrNot) {
-					result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
-				}
+				if(postProcessOrNot)
+					result[tadIndex] = (T) postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result).index;
 				else {
-					result[tadIndex] = curr;
+					result[tadIndex] = curr.index;
 				}
 			}
+
 		}
 
 
@@ -388,31 +340,20 @@ __device__ void transform(
 
 
 
-	if(resultScalar && tid == 0) {
+	if(!resultScalar && tid == 0) {
 		freePermuteInfo(xTadInfo);
-		freePermuteInfo(yTadInfo);
 		freePermuteInfo(resultTadInfo);
 	}
 
-
 }
 
-extern "C"
-__global__ void printShapeBuffer(int n,int *buff) {
-	int tid = threadIdx.x;
-	int i = blockIdx.x * blockDim.x + tid;
-	if(i < n) {
-		printf("Buff item %d is %d\n",i,buff[i]);
-	}
-}
 
+//kernels defined to allow lookup by name: notice extern c
 extern "C"
 __global__ void transform_double(
 		int n
 		,double *dx
-		,int *xShapeInfo,
-		double *dy,
-		int *yShapeInfo
+		,int *xShapeInfo
 		,double *extraParams
 		,double *result,
 		int *resultShapeInfo
@@ -423,15 +364,12 @@ __global__ void transform_double(
 			n,
 			dx,
 			xShapeInfo,
-			dy,
-			yShapeInfo,
 			extraParams,
 			result,
 			resultShapeInfo,
 			gpuInformation,
 			dimension,
 			dimensionLength,postProcessOrNot);
-
 }
 
 
@@ -439,28 +377,19 @@ extern "C"
 __global__ void transform_float(
 		int n
 		,float *dx
-		,int *xShapeInfo,
-		float *dy,
-		int *yShapeInfo
+		,int *xShapeInfo
 		,float *extraParams
 		,float *result,
 		int *resultShapeInfo
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength,int postProcessOrNot) {
-	transform<float>(
-			n,
+	transform<float>(n,
 			dx,
 			xShapeInfo,
-			dy,
-			yShapeInfo,
 			extraParams,
 			result,
 			resultShapeInfo,
 			gpuInformation,
-			dimension,
-			dimensionLength,postProcessOrNot);
-
+			dimension,dimensionLength,postProcessOrNot);
 }
-
-

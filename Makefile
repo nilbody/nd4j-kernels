@@ -5,7 +5,7 @@ src \
 
 export TOP_DIR:= .
 export OUTPUT_DIR:= $(TOP_DIR)/output
-export SUB_MODULES:= broadcasting pairwise_transforms reduce reduce3 scalar transforms 
+export SUB_MODULES:= broadcasting indexreduce pairwise_transforms reduce reduce3 scalar transforms 
 
 all: $(SUB_MODULES)
 $(SUB_MODULES):

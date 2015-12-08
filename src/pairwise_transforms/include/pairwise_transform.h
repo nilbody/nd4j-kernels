@@ -10,7 +10,17 @@ __device__ T op(T d1,T *params);
 
 
 template <typename T>
-__device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,int incy,T *params,T *result,int incz,int blockSize) {
+__device__ void transform(
+		int n,
+		int xOffset,
+		int yOffset,
+		int resultOffset,
+		T *dx,
+		T *dy,
+		int incx,
+		int incy,
+		T *params,
+		T *result,int incz,int blockSize) {
 
 	int totalThreads = gridDim.x * blockDim.x;
 	int tid = threadIdx.x;
@@ -19,7 +29,7 @@ __device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,i
 	if (incy == 0) {
 		if ((blockIdx.x == 0) && (tid == 0)) {
 			for (; i < n; i++) {
-				result[i * incz] = op(dx[i * incx],params);
+				result[resultOffset + i * incz] = op(dx[xOffset + i * incx],params);
 			}
 
 		}
@@ -28,18 +38,18 @@ __device__ void transform(int n,int xOffset,int yOffset, T *dx, T *dy,int incx,i
 		if (incx == 1) {
 			/* both increments equal to 1 */
 			for (; i < n; i += totalThreads) {
-				result[i * incz] = op(dx[i],dy[i],params);
+				result[resultOffset + i * incz] = op(dx[xOffset + i * incx],dy[yOffset + i * incy],params);
 			}
 		} else {
 			/* equal, positive, non-unit increments. */
 			for (; i < n; i += totalThreads) {
-				result[i * incz] = op(dx[i * incx],dy[i * incy],params);
+				result[resultOffset + i * incz] = op(dx[xOffset + i * incx],dy[yOffset + i * incy],params);
 			}
 		}
 	} else {
 		/* unequal or nonpositive increments */
 		for (; i < n; i += totalThreads) {
-			result[i * incz] = op(dx[i * incx],dy[i * incy],params);
+			result[resultOffset + i   * incz] = op(dx[xOffset + i * incx],dy[yOffset + i * incy],params);
 		}
 	}
 }
@@ -55,13 +65,13 @@ __global__ void printShapeBuffer(int n,int *buff) {
 }
 
 extern "C"
-__global__ void transform_double(int n,int xOffset,int yOffset, double *dx, double *dy,int incx,int incy,double *params,double *result,int incz,int blockSize) {
-    transform<double>(n,xOffset,yOffset,dx,dy,incx,incy,params,result,incz,blockSize);
+__global__ void transform_double(int n,int xOffset,int yOffset, int resultOffset,double *dx, double *dy,int incx,int incy,double *params,double *result,int incz,int blockSize) {
+	transform<double>(n,xOffset,yOffset,resultOffset,dx,dy,incx,incy,params,result,incz,blockSize);
 }
 
 extern "C"
-__global__ void transform_float(int n,int xOffset,int yOffset, float *dx, float *dy,int incx,int incy,float *params,float *result,int incz,int blockSize) {
-    transform<float>(n,xOffset,yOffset,dx,dy,incx,incy,params,result,incz,blockSize);
+__global__ void transform_float(int n,int xOffset,int yOffset, int resultOffset,float *dx, float *dy,int incx,int incy,float *params,float *result,int incz,int blockSize) {
+	transform<float>(n,xOffset,yOffset,resultOffset,dx,dy,incx,incy,params,result,incz,blockSize);
 }
 
 

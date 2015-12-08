@@ -10,7 +10,7 @@ template<> __device__ double update<double>(double old,double opOutput,double *e
 
 
 template<> __device__ double op<double>(double d1,double *extraParams) {
-	return pow(d1,2);
+	return d1 * d1;
 }
 
 
@@ -32,7 +32,7 @@ template<> __device__ float update<float>(float old,float opOutput,float *extraP
 
 
 template<> __device__ float op<float>(float d1,float *extraParams) {
-	return powf(d1,2);
+	return d1 * d1;
 }
 
 
