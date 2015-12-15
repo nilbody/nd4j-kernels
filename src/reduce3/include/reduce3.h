@@ -1,9 +1,5 @@
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <reduce_common.h>
 #include <sharedmem.h>
-#include <tad.h>
-
 
 //an op for the kernel
 template<typename T>

@@ -1,9 +1,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <reduce_common.h>
 #include <sharedmem.h>
-#include <tad.h>
-#include <indexing.h>
 
 
 
@@ -110,6 +109,23 @@ __global__ void printShapeBuffer(int n,int *buff) {
 }
 
 
+template<typename T>
+__device__ void aggregateTad(T *oldResult,int oldResultLength,T *newResult,int newResultLength) {
+	int absDelta = abs(oldResultLength - newResultLength);
+	SharedMemory<T> val;
+	volatile T *sPartials = val.getPointer();
+	int tid = threadIdx.x;
+	unsigned int i =    blockIdx.x  * blockDim.x + tid;
+	//start on the original value
+	sPartials[tid] = oldResult[i];
+	__syncthreads();
+	unsigned int totalThreads = blockDim.x * gridDim.x;
+	for(; i < oldResultLength; i += totalThreads) {
+
+	}
+
+}
+
 /**
  * @param n n is the number of
  *        elements to loop through
@@ -139,7 +155,6 @@ __device__ void transform(
 		,int *gpuInformation,
 		int *dimension,
 		int dimensionLength,int postProcessOrNot) {
-
 
 	int nIsPow2 = (n % 2 == 0);
 	/**
@@ -193,6 +208,8 @@ __device__ void transform(
 
 	T reduction = extraParams[0];
 	if(tid == 0) {
+
+		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
 		if(dimensionLength == 1) {
 			if(dimension[0] == MAX_DIMENSION)
 				resultScalar = 1;
@@ -201,7 +218,9 @@ __device__ void transform(
 		}
 		else
 			resultScalar = 0;
-		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
+
+		if(resultLength == 1)
+			resultScalar = 1;
 		xOffset = offset(xShapeInfo);
 		xElementWiseStride = elementWiseStride(xShapeInfo);
 
@@ -241,10 +260,12 @@ __device__ void transform(
 
 		// write result for this block to global mem
 		if (tid == 0) {
-			if(postProcessOrNot)
-				result[blockIdx.x] = postProcess(sPartials[0],xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+			if(postProcessOrNot) {
+				result[blockIdx.x] = postProcess(sPartials[0],n,xOffset,dx, xElementWiseStride,extraParams,result);
+			}
 			else {
 				result[blockIdx.x] = sPartials[0];
+
 			}
 		}
 	}
@@ -281,10 +302,7 @@ __device__ void transform(
 			startValue = reduction;
 			//when the number of elements per tad is greater than grid size, we need to compute partial
 			//reductions when initializing
-			if(xLength > gpuInformation[1])
-				elementsPerThread = xLength / gpuInformation[1];
-			else
-				elementsPerThread = 1;
+			elementsPerThread = 1;
 		}
 
 
@@ -303,15 +321,20 @@ __device__ void transform(
 							break;
 						T val = dx[valueOffset];
 						sPartials[tid] = update(sPartials[tid],op(val,extraParams),extraParams);
+						__syncthreads();
 					}
 
 					else {
 						valueOffset = blockOffset  + (tid * i * xElementWiseStride);
-						//break at the end
-						if(valueOffset >= n)
-							break;
-						T val = dx[valueOffset];
-						sPartials[tid] = val;
+						if(valueOffset < n) {
+							T val = dx[valueOffset];
+							sPartials[tid] = val;
+						}
+						else {
+							sPartials[tid] = startValue;
+						}
+
+						__syncthreads();
 					}
 
 
@@ -333,8 +356,9 @@ __device__ void transform(
 				for(int j = 0; j < xLength; j++) {
 					curr = update(curr,op(sPartials[j],extraParams),extraParams);
 				}
-				if(postProcessOrNot)
+				if(postProcessOrNot) {
 					result[tadIndex] = postProcess(curr,xLength,xOffset,dx, xElementWiseStride,extraParams,result);
+				}
 				else {
 					result[tadIndex] = curr;
 				}

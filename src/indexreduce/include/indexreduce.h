@@ -1,8 +1,4 @@
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <tad.h>
-#include <indexing.h>
+#include <reduce_common.h>
 
 template <typename T>
 struct  IndexValue {
@@ -60,8 +56,8 @@ struct SharedIndexValue <double>
 {
 	__device__ IndexValue<double>* getPointer()
 	{
-		extern __shared__ IndexValue<double> s_int[];
-		return s_int;
+		extern __shared__ IndexValue<double> s_int6[];
+		return s_int6;
 	}
 };
 

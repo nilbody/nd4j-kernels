@@ -855,8 +855,7 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 
 
 	////printf("Slice offset %d ret offset %d slice idx %d\n",sliceOffset,retOffset,sliceIdx);
-	int newMajorStride = ret2Stride[0];
-	retOffset = offset(xShapeInfo) + sliceIdx * newMajorStride;
+	retOffset = offset(xShapeInfo) + sliceIdx * ret2Stride[0];
 
 
 	if(retOffset < 0)
