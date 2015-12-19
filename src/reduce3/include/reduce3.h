@@ -1,6 +1,6 @@
 #include <reduce_common.h>
 #include <sharedmem.h>
-
+#include <postprocess.h>
 //an op for the kernel
 template<typename T>
 __device__ T op(T d1,T d2,T *extraParams);
@@ -10,9 +10,7 @@ template<typename T>
 __device__ T update(T old,T opOutput,T *extraParams);
 
 
-//post process result (for things like means etc)
-template<typename T>
-__device__ T postProcess(T reduction,int n,int xOffset,T *dx,int incx,T *extraParams,T *result);
+
 
 template<typename T>
 __device__ T merge(T old,T opOutput,T *extraParams);

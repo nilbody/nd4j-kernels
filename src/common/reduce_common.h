@@ -41,18 +41,6 @@ __device__ __host__ int tadsPerReduceIndex(int tadsForReduce,int tadsForOriginal
 	return tadsForOriginal / tadsForReduce;
 }
 
-/**
- * Maps the given index
- * based
- * @param origingalTads the number of tads for a
- * the multiplied problem
- * @param numTads the number of tads for the
- * shrunken/multi dimension problem
- *
- */
-__device__ __host__ int tadIndexForExpanded(int originalTads,int numTads,int idx) {
-	return idx / tadsPerReduceIndex(numTads,originalTads);
-}
 
 /**
  * Maps a linear index to a reduction index
@@ -71,5 +59,8 @@ __device__ __host__ int reductionIndexForLinear(
 	int tad = tadIndex(i,elementWiseStride,numElementsPerTad);
 	return reductionIndexForTad(tad,tadNum,originalTadNum);
 }
+
+
+
 
 
