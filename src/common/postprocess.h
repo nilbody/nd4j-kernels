@@ -21,19 +21,21 @@ template <typename T>
 __device__ void postProcessLoop(int n,int xOffset,T *dx,int incx,T *extraParams,T *result) {
 	int tid = threadIdx.x;
 	int i = xOffset + blockIdx.x * blockDim.x + tid;
+	printf("Executing post process loop on thread %d starting at %d with x offset %d and n %d\n",tid,i,xOffset,n);
 	for(; i < n; i += gridDim.x * blockDim.x) {
+		printf("Tid %d with item %d before post process %f\n",tid,i,dx[i]);
 		dx[i] = postProcess(dx[i],n,xOffset,dx,incx,extraParams,result);
 	}
 }
 
 
 extern "C"
-__global__ void postProcessLoopDouble(int n,int xOffset,double *dx,int incx,double *extraParams,double *result) {
+__global__ void postProcessLoop_double(int n,int xOffset,double *dx,int incx,double *extraParams,double *result) {
 	postProcessLoop<double>(n,xOffset,dx,incx,extraParams,result);
 }
 
 extern "C"
-__global__ void postProcessLoopFloat(int n,int xOffset,float *dx,int incx,float *extraParams,float *result) {
+__global__ void postProcessLoop_float(int n,int xOffset,float *dx,int incx,float *extraParams,float *result) {
 	postProcessLoop<float>(n,xOffset,dx,incx,extraParams,result);
 }
 

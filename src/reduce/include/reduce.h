@@ -196,6 +196,7 @@ __device__ void transform(
 
 	__shared__ volatile int elementsPerThread;
 
+	__shared__ volatile int elementsPerTad;
 
 	//only compute the tad indexes once
 	__shared__ TADPermuteInfo xTadInfo;
@@ -224,7 +225,8 @@ __device__ void transform(
 			resultScalar = 1;
 		xOffset = offset(xShapeInfo);
 		xElementWiseStride = elementWiseStride(xShapeInfo);
-
+		xLength = length(xShapeInfo);
+		elementsPerTad = xLength / resultLength;
 
 	}
 	__syncthreads();
@@ -271,10 +273,34 @@ __device__ void transform(
 	}
 
 	else if(!resultScalar) {
-		int i = xOffset + blockIdx.x * blockDim.x + tid;
-		int tad = tadIndex(i,xElementWiseStride,xLength);
-		for(; i < n ; i+= gridDim.x * blockDim.x) {
-			result[tad] = update(result[tad],dx[i],extraParams);
+		if(tid == 0) {
+			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
+		}
+
+		__syncthreads();
+
+
+		//number of tads per reduce index
+		int tadsPerReduceIndex2 = resultLength;
+		//each thread does a tad
+		if(tid >= tadsPerReduceIndex2)
+			return;
+
+
+		//compute the offset for the tad for this thread
+		//iterating via element wise stride
+		//note here blockidx.x + tid is the tad we want
+		int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
+		int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
+		int numTads = resultLength;
+		for(int i = 0; i < elementsPerTad; offsetForBlock += xElementWiseStride,i++) {
+			sPartials[tid] = update(sPartials[tid],op(dx[offsetForBlock],extraParams),extraParams);
+			__syncthreads();
+		}
+
+        result[tid] = sPartials[tid];
+		if(tid == 0) {
+			freePermuteInfo(xTadInfo);
 		}
 	}
 
