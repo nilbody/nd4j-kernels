@@ -7,15 +7,15 @@
       <sourceFolder url="file://$MODULE_DIR$/src/broadcasting/include/broadcasting.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/pairwise_transforms/include/pairwise_transform.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/reduce3/include/reduce3.h" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/reduce/include/reduce.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/indexreduce/include/indexreduce.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/common/helper_cuda.h" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/common/tad.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/common/sharedmem.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/common/tad.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/common/helper_string.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/common/indexing.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/transforms/include/transform.h" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/reduce/include/reduce.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/scalar/include/scalar.h" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/indexreduce/include/indexreduce.h" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/README.md" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vars.mk" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/LICENSE" isTestSource="false" />

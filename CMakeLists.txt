@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.3)
 project(nd4j_kernels)
-
+FIND_PACKAGE(CUDA REQUIRED)
+INCLUDE(FindCUDA)
+INCLUDE_DIRECTORIES(/usr/local/cuda/include ${MPI_INCLUDE_PATH})
+FILE(GLOB SOURCES "*.cu" "*.cpp" "*.c" "*.h")
+LIST(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_50,code=sm_50)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 set(SOURCE_FILES
