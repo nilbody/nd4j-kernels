@@ -1,9 +1,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <reduce_common.h>
-#include <sharedmem.h>
-#include <postprocess.h>
+#include "reduce_common.h"
+#include "sharedmem.h"
+#include "postprocess.h"
 
 //an op for the kernel
 template<typename T>
@@ -80,13 +80,6 @@ __device__ T doBlock(int n,T *sPartials,T *dx,int xOffset,int incx,T *extraParam
 
 
 
-template<typename T>
-__device__ void applyPostProcess(T *data,int offset,int length,int stride,int n) {
-	for(int i = offset; i < n; i += stride) {
-
-	}
-}
-
 
 
 template <typename T>
@@ -110,22 +103,7 @@ __global__ void printShapeBuffer(int n,int *buff) {
 }
 
 
-template<typename T>
-__device__ void aggregateTad(T *oldResult,int oldResultLength,T *newResult,int newResultLength) {
-	int absDelta = abs(oldResultLength - newResultLength);
-	SharedMemory<T> val;
-	volatile T *sPartials = val.getPointer();
-	int tid = threadIdx.x;
-	unsigned int i =    blockIdx.x  * blockDim.x + tid;
-	//start on the original value
-	sPartials[tid] = oldResult[i];
-	__syncthreads();
-	unsigned int totalThreads = blockDim.x * gridDim.x;
-	for(; i < oldResultLength; i += totalThreads) {
 
-	}
-
-}
 
 /**
  * @param n n is the number of
@@ -293,12 +271,13 @@ __device__ void transform(
 		int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
 		int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
 		int numTads = resultLength;
+
 		for(int i = 0; i < elementsPerTad; offsetForBlock += xElementWiseStride,i++) {
 			sPartials[tid] = update(sPartials[tid],op(dx[offsetForBlock],extraParams),extraParams);
 			__syncthreads();
 		}
 
-        result[tid] = sPartials[tid];
+		result[tid] = sPartials[tid];
 		if(tid == 0) {
 			freePermuteInfo(xTadInfo);
 		}
@@ -477,12 +456,12 @@ __device__ void collapseTad(
 		,int n
 		,int elementWiseStride
 		,int numOriginalTads,int sharedMemorySize,
-		int *xShapeInfo
-		,int *dimension,int dimensionLength) {
+		int *xShapeInfo,int *resultShapeInfo
+		,int *dimension,int dimensionLength,int reduceDimension) {
 	SharedMemory<T> val;
 	volatile T *sPartials = val.getPointer();
 	int tid = threadIdx.x;
-	//intialize te values
+	//intialize tne values
 	int numItems = sharedMemorySize / sizeof(T);
 
 	for (int i = tid; i < numItems; i += blockDim.x) {
@@ -515,8 +494,11 @@ __device__ void collapseTad(
 
 	//number of tads per reduce index
 	int tadsPerReduceIndex2 = tadsPerReduceIndex(numTads,numOriginalTads);
+	printf("In collapse tad with tid %d and tadsPerReduceIndex2 %d with numTads %d and numOriginalTads %d\n "
+			,tid,tadsPerReduceIndex2,numTads,numOriginalTads);
+
 	//each thread does a tad
-	if(tid >= tadsPerReduceIndex2)
+	if(tid >= numTads)
 		return;
 
 
@@ -549,10 +531,14 @@ __device__ void collapseTad(
 	//compute the offset for the tad for this thread
 	//iterating via element wise stride
 	//note here blockidx.x + tid is the tad we want
+	dimension[0] = reduceDimension;
 	int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
-	int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
-
-	for(int i = 0; i < elementsPerTad; offsetForBlock += elementWiseStride,i++) {
+	int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,1,xTadInfo);
+/*	printf("Processing tad %d and block %d with tid %d with starting offset %d and element wise stride %d "
+			"and elements per tad %d"
+			"\n",tadForThread,blockIdx.x,tid,offsetForBlock,elementWiseStride,tadsPerReduceIndex2);*/
+	for(int i = 0; i < tadsPerReduceIndex2; offsetForBlock += elementWiseStride,i++) {
+		printf("TAD %d processing value %f at offset %d\n",tid,sPartials[tid],offsetForBlock);
 		sPartials[tid] = update(sPartials[tid],op(data[offsetForBlock],extraParams),extraParams);
 		__syncthreads();
 	}
@@ -577,27 +563,28 @@ extern "C"
 __global__ void collapseTad_float(
 		float *data
 		,float *result
-		,float *initialValue
+		,float *extraParams
 		,int elementsPerTad
 		,int numTads
 		,int n
 		,int elementWiseStride
 		,int numOriginalTads,int sharedMemorySize,
-		int *xShapeInfo
-		,int *dimension,int dimensionLength) {
+		int *xShapeInfo,int *resultShapeInfo
+		,int *dimension,int dimensionLength,int reduceDimension) {
 	collapseTad<float>(
-			data,
-			result,
-			initialValue,
-			elementsPerTad,
-			numTads,
-			n,
-			elementWiseStride,
-			numOriginalTads,
-			sharedMemorySize,
-			xShapeInfo,
-			dimension,
-			dimensionLength);
+				data,
+				result,
+				extraParams,
+				elementsPerTad,
+				numTads,
+				n,
+				elementWiseStride,
+				numOriginalTads,
+				sharedMemorySize,
+				xShapeInfo,
+				resultShapeInfo,
+				dimension,
+				dimensionLength,reduceDimension);
 
 }
 
@@ -605,27 +592,28 @@ extern "C"
 __global__ void collapseTad_double(
 		double *data
 		,double *result
-		,double *initialValue
+		,double *extraParams
 		,int elementsPerTad
 		,int numTads
 		,int n
 		,int elementWiseStride
 		,int numOriginalTads,int sharedMemorySize,
-		int *xShapeInfo
-		,int *dimension,int dimensionLength) {
+		int *xShapeInfo,int *resultShapeInfo
+		,int *dimension,int dimensionLength,int reduceDimension) {
 	collapseTad<double>(
 			data,
-			result
-			,initialValue
-			,elementsPerTad,
+			result,
+			extraParams,
+			elementsPerTad,
 			numTads,
 			n,
 			elementWiseStride,
 			numOriginalTads,
 			sharedMemorySize,
 			xShapeInfo,
+			resultShapeInfo,
 			dimension,
-			dimensionLength);
+			dimensionLength,reduceDimension);
 
 }
 

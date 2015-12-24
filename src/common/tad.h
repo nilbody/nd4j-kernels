@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <mathutil.h>
 #define MAX_DIMENSION  0x7fffffff
 
 /**
@@ -53,18 +54,7 @@ __device__ __host__ ShapeInformation *shapeCopy(ShapeInformation *toCopy) {
 	return copy;
 }
 
-/**
- * Returns the prod of the data
- * up to the given length
- */
-__device__ __host__ int prod(int *data,int length) {
-	int prod = 1;
-	for(int i = 0; i < length; i++) {
-		prod *= data[i];
-	}
 
-	return prod;
-}
 
 /**
  * Return a copy of this array with the
@@ -590,9 +580,9 @@ __device__ __host__ int offset(int index,int rank,ShapeInformation *info,int *di
 		retOffset = info->offset + offset  * info->stride[strideIndex];
 	}
 
-	//determine offset here
-	//note here offset doesn't change, just the shape
-	//of the tad
+		//determine offset here
+		//note here offset doesn't change, just the shape
+		//of the tad
 	else if(length == lengthPerSlice(ret2Rank,ret2,zeroDimension,1)) {
 		offset -= ret2[0] * (offset / ret2[0]);
 		//set offset here
@@ -765,7 +755,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 
 	int  *ret2 = slice(info.permutedShape);
 	int *ret2Stride = slice(info.permutedStrides);
-	int baseRetOffset = sliceIdx * info.permutedStrides[0];
 	int ret2Length = prod(ret2,rank(xShapeInfo) - 1);
 	int ret2Rank = info.xRank - 1;
 
@@ -773,8 +762,8 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 	int tensorShapeProd = info.tensorShapeProd;
 
 	int tensorShapeRoughlyEquals = dimensionLength == 1 && abs(info.tensorShapeLength - dimensionLength) <= 1;
-	if(tensorShapeProd == ret2Length &&   tensorShapeRoughlyEquals || dimensionLength == info.tensorShapeLength) {
-		return baseRetOffset;
+	if((tensorShapeProd == ret2Length && tensorShapeRoughlyEquals == 1) || dimensionLength == info.tensorShapeLength) {
+		return retOffset;
 	}
 
 
@@ -792,8 +781,8 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 		ret2Stride = slice(ret2Stride);
 		ret2Rank--;
 		ret2Length = prod(ret2,ret2Rank);
-		retOffset = offset(xShapeInfo) + sliceOffset * newMajorStride;
-		retOffset += baseRetOffset;
+		int newStride = ret2Stride[ret2Rank - 1];
+		retOffset += ( sliceOffset * ret2Length * newStride);
 
 		if(retOffset < 0)
 			retOffset = 0;
@@ -801,9 +790,9 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 		return  retOffset;
 	}
 
-	//determine offset here
-	//note here offset doesn't change, just the shape
-	//of the tad
+		//determine offset here
+		//note here offset doesn't change, just the shape
+		//of the tad
 	else if(length == lengthPerSlice2) {
 		sliceOffset -= ret2[0] * (sliceOffset / ret2[0]);
 		int newMajorStride = ret2Stride[0];
@@ -812,9 +801,9 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 		ret2 = slice(ret2);
 		ret2Stride = slice(ret2Stride);
 		ret2Rank--;
-		retOffset = offset(xShapeInfo) + sliceOffset * newMajorStride;
 		//accumulate from the slice
-		retOffset += baseRetOffset;
+		int newStride = ret2Stride[ret2Rank - 1];
+		retOffset += (lengthPerSlice2 * newStride * sliceOffset);
 
 		if(retOffset < 0)
 			retOffset = 0;
@@ -826,7 +815,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 	else {
 		ret2Length = prod(ret2,ret2Rank);
 		//start at zero incrementing whenever we hit a slice > 0
-		retOffset = baseRetOffset;
 		while(ret2Length > length && ret2Rank > 0) {
 			sliceIdx = sliceOffsetForTensor(ret2Rank,index, ret2, info.tensorShape,info.tensorShapeLength,info.zeroDimension,1);
 			sliceIdx -= ret2[0] * (sliceIdx / ret2[0]);
@@ -845,9 +833,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 
 			ret2Rank--;
 			ret2Length = prod(ret2,ret2Rank);
-
-
-
 		}
 
 		return retOffset;

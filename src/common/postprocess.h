@@ -20,11 +20,10 @@ template <> float postProcess<float>(float reduction,int n,int xOffset,float *dx
 template <typename T>
 __device__ void postProcessLoop(int n,int xOffset,T *dx,int incx,T *extraParams,T *result) {
 	int tid = threadIdx.x;
-	int i = xOffset + blockIdx.x * blockDim.x + tid;
-	printf("Executing post process loop on thread %d starting at %d with x offset %d and n %d\n",tid,i,xOffset,n);
-	for(; i < n; i += gridDim.x * blockDim.x) {
-		printf("Tid %d with item %d before post process %f\n",tid,i,dx[i]);
-		dx[i] = postProcess(dx[i],n,xOffset,dx,incx,extraParams,result);
+	int i = xOffset + (blockIdx.x * blockDim.x + tid);
+
+	for(; i < n; i += gridDim.x * blockDim.x * incx) {
+		result[i] = postProcess(result[i],n,xOffset,dx,incx,extraParams,result);
 	}
 }
 
