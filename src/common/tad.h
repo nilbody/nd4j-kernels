@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <mathutil.h>
+#include "mathutil.h"
 #define MAX_DIMENSION  0x7fffffff
 
 /**
@@ -235,7 +235,14 @@ __device__ __host__ int checkArrangeArray(int *arr,int *shape,int arrLength,int 
 
 
 
-
+/**
+ * Get the ordering for the device
+ * @param length
+ * @param shape
+ * @param stride
+ * @param elementStride
+ * @return
+ */
 __device__ __host__ char getOrder(int length ,int *shape,int *stride,int elementStride) {
 	int sd;
 	int dim;
@@ -308,7 +315,18 @@ __device__ __host__ int* concat(int  numArrays,int numTotalElements,int **arr,in
 }
 
 
-
+/**
+ * Get the length per slice of the
+ * given shape and the dimension
+ * @param rank the rank of the shape
+ * @param shape the shape of to get
+ * the length per slice for
+ * @param dimension the dimension to
+ * get the length per slice for
+ * @param dimensionLength the length of the dimension array
+ * @return the length per slice of the given shape
+ * along the given dimension
+ */
 __device__ __host__ int lengthPerSlice(int rank,int *shape,int *dimension,int dimensionLength) {
 	int *ret2 = (int *) malloc((abs(rank - dimensionLength)) * sizeof(int));
 	removeIndex(shape,dimension,rank,dimensionLength,&ret2);
@@ -335,7 +353,11 @@ __device__ __host__ int sliceOffsetForTensor(int rank,int index, int *shape, int
 	return offset;
 }
 
-
+/**
+ * Return a copy of a buffer.
+ * This buffer allocates memory
+ * that must be freed elsewhere.
+ */
 __device__ __host__ int *copyOf(int length,int *toCopy) {
 	int *ret = (int *) malloc(sizeof(int) * length);
 	for(int i = 0; i < length; i++)
@@ -343,7 +365,15 @@ __device__ __host__ int *copyOf(int length,int *toCopy) {
 	return ret;
 }
 
-
+/**
+ * Permute the given strides
+ * in the given rearrange order
+ * @param toPermute the buffer to permute
+ * @param shapeRank the length of the buffer to permute
+ * @param rearrange the rearrange order (must be 0 based indexes
+ * and all must be filled in)
+ * @return the rearranged array
+ */
 __device__ __host__ int * permutedStrides(int *toPermute,int shapeRank,int *rearrange) {
 	int *strideCopy = copyOf(shapeRank,toPermute);
 	checkArrangeArray(rearrange,strideCopy,shapeRank,shapeRank);
@@ -353,6 +383,12 @@ __device__ __host__ int * permutedStrides(int *toPermute,int shapeRank,int *rear
 }
 
 
+/**
+ * Permute the shape information
+ * @param info the shape information to permute
+ * @param rearrange the order to re arrange
+ * @param rank the rank of the rearrange array
+ */
 __device__ __host__ void permute(ShapeInformation **info,int *rearrange,int rank) {
 	ShapeInformation *infoDeref = (ShapeInformation *) *info;
 	checkArrangeArray(rearrange,infoDeref->shape,rank,rank);
@@ -369,10 +405,33 @@ __device__ __host__ void permute(ShapeInformation **info,int *rearrange,int rank
 }
 
 /**
- *
+ * Return the slice (shape + 1 in pointer arithmetic)
+ * @param shape the shape to take the slice of
+ * @return the shape array - the first entry
  */
 __device__ __host__ int *slice(int *shape) {
 	return shape + 1;
+}
+
+
+/**
+ * Returns the length of the
+ * shape information buffer:
+ * rank * 2 + 3
+ * @param rank the rank to get the shape
+ * info length for
+ * @return rank * 2 + 4
+ */
+__device__ __host__ int shapeInfoLength(int rank) {
+	return rank * 2 + 4;
+}
+
+/**
+ * Returns the rank portion of
+ * an information buffer
+ */
+__device__ __host__ int rank(int *buffer) {
+	return buffer[0];
 }
 
 /**
@@ -387,7 +446,7 @@ __device__ __host__ int *slice(int *shape) {
  */
 __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	ShapeInformation *info = (ShapeInformation *) malloc(sizeof(ShapeInformation));
-	int length = buffer[0] * 2 + 4;
+	int length = shapeInfoLength(rank(buffer));
 	int rank = buffer[0];
 
 	//start after rank
@@ -402,13 +461,21 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	return info;
 }
 
+
+
+
+/**
+ * Returns the shape portion of an information
+ * buffer
+ */
 __device__ __host__ int * shape(int *buffer) {
 	return buffer + 1;
 }
-__device__ __host__ int rank(int *buffer) {
-	return buffer[0];
-}
 
+/**
+ * Returns the stride portion of an information
+ * buffer
+ */
 __device__ __host__ int *stride(int *buffer) {
 	return buffer + (1 + rank(buffer));
 }
@@ -421,23 +488,38 @@ __device__ __host__ int length(int *shapeInfo) {
 }
 
 
-
+/***
+ * Returns the offset portion of an information buffer
+ */
 __device__ __host__ int offset(int *buffer) {
-	int length = buffer[0] * 2 + 4;
+	int length = shapeInfoLength(rank(buffer));
 	return buffer[length - 3];
 }
 
+/**
+ * Returns the ordering
+ * for this shape information buffer
+ */
 __device__ __host__ char order(int *buffer) {
 	int length = buffer[0] * 2 + 4;
 	return (char) buffer[length - 1];
 }
 
+/**
+ * Returns the element wise stride for this information
+ * buffer
+ */
 __device__ __host__ int elementWiseStride(int *buffer) {
-	int length = buffer[0] * 2 + 4;
-	return buffer[length - 2];
+	int length2 = shapeInfoLength(buffer[0]);
+	return buffer[length2 - 2];
 }
 
-__device__ __host__ int isScalar( int *info) {
+/**
+ * Returns whether
+ * the given shape info buffer
+ * represents a scalar shape
+ */
+__device__ __host__ int isScalar(int *info) {
 	if(rank(info) > 2)
 		return 0;
 	if(rank(info) == 1)
@@ -448,6 +530,12 @@ __device__ __host__ int isScalar( int *info) {
 	return 0;
 }
 
+/**
+ * Returns whether
+ * the given shape information
+ * represents a scalar
+ * shape or not
+ */
 __device__ __host__ int isScalar(volatile ShapeInformation *info) {
 	if(info->rank > 2)
 		return 0;
@@ -489,17 +577,6 @@ __device__ __host__ int isVector(int *shape,int rank) {
 	return 0;
 }
 
-/**
- * Returns the length of the
- * shape information buffer:
- * rank * 2 + 3
- * @param rank the rank to get the shape
- * info length for
- * @return rank * 2 + 4
- */
-__device__ __host__ int shapeInfoLength(int rank) {
-	return rank * 2 + 4;
-}
 
 /**
  * Computes the tensor along dimension
@@ -651,6 +728,12 @@ typedef struct  {
 	int tensorShapeProd;
 } TADPermuteInfo;
 
+/**
+ * Given the shape information and dimensions
+ * returns common information
+ * needed for tensor along dimension
+ * calculations
+ */
 __device__ __host__ TADPermuteInfo tadInfo(int *xShapeInfo,int *dimension,int dimensionLength) {
 	int *shapeOfX = shape(xShapeInfo);
 	int xRank = rank(xShapeInfo);
@@ -703,6 +786,10 @@ __device__ __host__ TADPermuteInfo tadInfo(int *xShapeInfo,int *dimension,int di
 	return info;
 }
 
+/**
+ * Frees the permute information
+ * @param info the info to free
+ */
 __host__ __device__ void freePermuteInfo(TADPermuteInfo info) {
 	free(info.tensorShape);
 	free(info.reverseDimensions);
@@ -735,6 +822,21 @@ __device__ __host__ int tensorsAlongDimension(volatile int rank,volatile int len
 	return ret;
 }
 
+/**
+ * Computes the number
+ * of tensors along
+ * a given dimension
+ */
+__device__ __host__ int tensorsAlongDimension(int *shapeInfo,int *dimension,int dimensionLength) {
+	int *tensorShape = keep(shape(shapeInfo),dimension,dimensionLength,rank(shapeInfo));
+	int ret = length(shapeInfo) / prod(tensorShape,dimensionLength);
+	free(tensorShape);
+	return ret;
+}
+
+/**
+ *
+ */
 __device__ __host__ int tensorsAlongDimension(TADPermuteInfo info,int *dimension,int dimensionLength) {
 	int length = prod(info.permutedShape,info.xRank);
 	return length / prod(info.tensorShape, info.tensorShapeLength);
@@ -777,7 +879,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 
 	if(sliceIdx == 0 && length == lengthPerSlice2) {
 		ret2 = slice(ret2);
-		int newMajorStride = ret2Stride[0];
 		ret2Stride = slice(ret2Stride);
 		ret2Rank--;
 		ret2Length = prod(ret2,ret2Rank);
@@ -795,8 +896,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 		//of the tad
 	else if(length == lengthPerSlice2) {
 		sliceOffset -= ret2[0] * (sliceOffset / ret2[0]);
-		int newMajorStride = ret2Stride[0];
-
 		//set offset here
 		ret2 = slice(ret2);
 		ret2Stride = slice(ret2Stride);
@@ -839,14 +938,6 @@ __device__ __host__ int offset(int index,int *xShapeInfo,int *dimension,int dime
 	}
 
 
-	////printf("Slice offset %d ret offset %d slice idx %d\n",sliceOffset,retOffset,sliceIdx);
-	retOffset = offset(xShapeInfo) + sliceIdx * ret2Stride[0];
-
-
-	if(retOffset < 0)
-		retOffset = 0;
-
-	return  retOffset;
 }
 
 __device__ __host__ int tadForBlockIndex(int blockSize,int blockIdx,int i) {

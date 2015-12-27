@@ -4,6 +4,7 @@
 #include "reduce_common.h"
 #include "sharedmem.h"
 #include "postprocess.h"
+#include "semaphore.h"
 
 //an op for the kernel
 template<typename T>
@@ -32,6 +33,7 @@ template <> double op<double>(double d1,double *extraParams);
 template <> float merge<float>(float old,float opOutput,float *extraParams);
 template <>float update<float>(float old,float opOutput,float *extraParams);
 template <> float op<float>(float d1,float *extraParams);
+
 
 
 
@@ -105,6 +107,8 @@ __global__ void printShapeBuffer(int n,int *buff) {
 
 
 
+
+
 /**
  * @param n n is the number of
  *        elements to loop through
@@ -135,7 +139,6 @@ __device__ void transform(
 		int *dimension,
 		int dimensionLength,int postProcessOrNot) {
 
-	int nIsPow2 = (n % 2 == 0);
 	/**
 	 * Gpu information for the problem
 	 */
@@ -145,8 +148,6 @@ __device__ void transform(
 	__shared__ volatile int resultScalar;
 
 
-	__shared__ int *xShape;
-	__shared__ int xRank;
 	__shared__ int xElementWiseStride;
 	__shared__ int xOffset;
 
@@ -176,19 +177,18 @@ __device__ void transform(
 
 	__shared__ volatile int elementsPerTad;
 
+	__shared__ volatile int tensorsForDimension;
+
 	//only compute the tad indexes once
 	__shared__ TADPermuteInfo xTadInfo;
-	__shared__ TADPermuteInfo resultTadInfo;
-	int valueOffset;
 
-	__shared__ T startValue;
+	__shared__ volatile int tadsPerThread;
 
-
-
+	__shared__ volatile int reductionIndexesPerBlock;
 
 	T reduction = extraParams[0];
 	if(tid == 0) {
-
+		tensorsForDimension = tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
 		resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
 		if(dimensionLength == 1) {
 			if(dimension[0] == MAX_DIMENSION)
@@ -206,17 +206,32 @@ __device__ void transform(
 		xLength = length(xShapeInfo);
 		elementsPerTad = xLength / resultLength;
 
+		if(gridDim.x >= resultLength) {
+			reductionIndexesPerBlock = 1;
+		}
+		else {
+			reductionIndexesPerBlock = resultLength / gridDim.x;
+		}
+
+		if(blockDim.x < tensorsForDimension) {
+			tadsPerThread = tensorsForDimension / blockDim.x;
+		}
+		//number of threads > tads
+		else {
+			tadsPerThread = 1;
+		}
+
+
+		xTadInfo = tadInfo(xShapeInfo,dimension,dimensionLength);
+
+
 	}
 	__syncthreads();
 
 
 
-
 	T curr;
-
 	if(resultScalar) {
-		int blockSize = gpuInformation[0];
-
 		unsigned int i =    blockIdx.x   *  xElementWiseStride + tid;
 		unsigned int gridSize = blockDim.x * gridDim.x *  xElementWiseStride;
 
@@ -251,36 +266,83 @@ __device__ void transform(
 	}
 
 	else if(!resultScalar) {
-		if(tid == 0) {
-			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-		}
-
-		__syncthreads();
-
-
-		//number of tads per reduce index
-		int tadsPerReduceIndex2 = resultLength;
-		//each thread does a tad
-		if(tid >= tadsPerReduceIndex2)
+		if(reductionIndexesPerBlock * blockIdx.x >= resultLength)
 			return;
 
 
-		//compute the offset for the tad for this thread
-		//iterating via element wise stride
-		//note here blockidx.x + tid is the tad we want
-		int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
-		int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
-		int numTads = resultLength;
+		int tadsPerReductionIndex = tensorsForDimension / resultLength;
+		//notice here that we do reduction indexes per block
+		//so as far as threads / reduction index are concerned, this is only for the particular block
+		int threadsPerReductionIndex = blockDim.x / reductionIndexesPerBlock;
 
-		for(int i = 0; i < elementsPerTad; offsetForBlock += xElementWiseStride,i++) {
-			sPartials[tid] = update(sPartials[tid],op(dx[offsetForBlock],extraParams),extraParams);
-			__syncthreads();
+		//minimum number of threads needed for each reduction index
+		int tadsNeeded = reductionIndexesPerBlock * tadsPerReductionIndex;
+
+		//for each reduction index in the block
+		//get the current reduction index to solve for
+		int reductionIndexToProcess = blockIdx.x  * reductionIndexesPerBlock;
+		//don't need all threads
+		if(tid >= tadsNeeded)
+			return;
+		else {
+			//process each tad
+			//tad wrt the thread
+			int currTad = tid + (blockIdx.x  * reductionIndexesPerBlock);
+			int offsetForTad = offset(currTad,xShapeInfo,dimension,dimensionLength,xTadInfo);
+
+			//update the reduction for the thread for the current tad
+			//note here that we compute the offset and then accumulate in shared memory
+			for(int element = 0; element < elementsPerTad; element++,offsetForTad += xElementWiseStride) {
+				sPartials[tid] = update(sPartials[tid],dx[offsetForTad],extraParams);
+				__syncthreads();
+			}
+
 		}
 
-		result[tid] = sPartials[tid];
+
+		//first thread for a reduction index
+		if(tid % tadsPerReductionIndex == 0 && tadsPerReductionIndex > 1) {
+			/**
+			 * Each reduction index is handled by k tads
+			 * which need to be combined in each thread.
+			 *
+			 * Since the TADS to be combined
+			 * are to be next to each other
+			 * we can assume that
+			 * the items in shared memory
+			 * can be combined and collapsed
+			 * in to the first thread's
+			 * entry.
+			 *
+			 * This follows a similar pattern
+			 * for global block wise reduction
+			 * and computing parallel sums
+			 * in other reduction implementations.
+			 *
+			 */
+			for(int i = 1; i < tadsPerReductionIndex; i++) {
+				sPartials[tid] = update(sPartials[tid],sPartials[tid + i],extraParams);
+				__syncthreads();
+			}
+		}
+
+
+
+		__syncthreads();
+
+		//after all the threads are done processing each first item in shared memory
+		//should correspond to the final value for the particular reduction index
+		//that was set for this block.
 		if(tid == 0) {
+			for(int i = 0; i < reductionIndexesPerBlock; i++) {
+				int reductionIndexToProcess = i + blockIdx.x *  reductionIndexesPerBlock;
+				result[reductionIndexToProcess] = sPartials[i];
+			}
+
 			freePermuteInfo(xTadInfo);
+
 		}
+
 	}
 
 }
@@ -450,18 +512,19 @@ template <typename T>
 __device__ void collapseTad(
 		T *data
 		,T *result
-		,T *extraParams
-		,int elementsPerTad
-		,int numTads
-		,int n
-		,int elementWiseStride
-		,int numOriginalTads,int sharedMemorySize,
-		int *xShapeInfo,int *resultShapeInfo
-		,int *dimension,int dimensionLength,int reduceDimension) {
+		,T *extraParams,
+		int numOriginalTads,
+		int sharedMemorySize,
+		int *xShapeInfo
+		,int *resultShapeInfo
+		,int *dimension,int dimensionLength) {
 	SharedMemory<T> val;
+	//number of tads for the reduced solution
+	int numTads = tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
+
 	volatile T *sPartials = val.getPointer();
 	int tid = threadIdx.x;
-	//intialize tne values
+	//initialize the values
 	int numItems = sharedMemorySize / sizeof(T);
 
 	for (int i = tid; i < numItems; i += blockDim.x) {
@@ -469,9 +532,10 @@ __device__ void collapseTad(
 	}
 	__syncthreads();
 
+
+
 	//each block processes a reduction index
-	if(blockIdx.x >= numTads)
-		return;
+	//don't bother iterating on this block if it goes over the number of tads
 
 
 	__shared__ TADPermuteInfo xTadInfo;
@@ -492,15 +556,19 @@ __device__ void collapseTad(
 	 *
 	 */
 
+
 	//number of tads per reduce index
-	int tadsPerReduceIndex2 = tadsPerReduceIndex(numTads,numOriginalTads);
-	printf("In collapse tad with tid %d and tadsPerReduceIndex2 %d with numTads %d and numOriginalTads %d\n "
-			,tid,tadsPerReduceIndex2,numTads,numOriginalTads);
+	__shared__ int tadsPerReduceIndex2;
+	if(tid == 0) {
+		tadsPerReduceIndex2 = tadsPerReduceIndex(numTads,numOriginalTads);
+	}
+
+	__syncthreads();
+
 
 	//each thread does a tad
-	if(tid >= numTads)
+	if(tid >= numTads || blockIdx.x >= tadsPerReduceIndex2)
 		return;
-
 
 
 	/**
@@ -531,15 +599,12 @@ __device__ void collapseTad(
 	//compute the offset for the tad for this thread
 	//iterating via element wise stride
 	//note here blockidx.x + tid is the tad we want
-	dimension[0] = reduceDimension;
 	int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
-	int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,1,xTadInfo);
-/*	printf("Processing tad %d and block %d with tid %d with starting offset %d and element wise stride %d "
-			"and elements per tad %d"
-			"\n",tadForThread,blockIdx.x,tid,offsetForBlock,elementWiseStride,tadsPerReduceIndex2);*/
-	for(int i = 0; i < tadsPerReduceIndex2; offsetForBlock += elementWiseStride,i++) {
-		printf("TAD %d processing value %f at offset %d\n",tid,sPartials[tid],offsetForBlock);
+	int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
+	for(int i = 0; i < tadsPerReduceIndex2; offsetForBlock += elementWiseStride(xShapeInfo),i++) {
 		sPartials[tid] = update(sPartials[tid],op(data[offsetForBlock],extraParams),extraParams);
+		printf("TAD %d and tid %d processing value %f with element wise stride %d and block %d and tads per reduce index %d\n"
+				,tadForThread,tid,data[offsetForBlock],elementWiseStride(xShapeInfo),blockIdx.x,tadsPerReduceIndex2);
 		__syncthreads();
 	}
 
@@ -564,27 +629,28 @@ __global__ void collapseTad_float(
 		float *data
 		,float *result
 		,float *extraParams
-		,int elementsPerTad
-		,int numTads
-		,int n
-		,int elementWiseStride
 		,int numOriginalTads,int sharedMemorySize,
 		int *xShapeInfo,int *resultShapeInfo
-		,int *dimension,int dimensionLength,int reduceDimension) {
+		,int *dimension,int dimensionLength) {
+	/**
+	 * 		T *data
+		,T *result
+		,T *extraParams,
+		int numOriginalTads,
+		int sharedMemorySize,
+		int *xShapeInfo,int *resultShapeInfo
+		,int *dimension,int dimensionLength
+	 */
 	collapseTad<float>(
-				data,
-				result,
-				extraParams,
-				elementsPerTad,
-				numTads,
-				n,
-				elementWiseStride,
-				numOriginalTads,
-				sharedMemorySize,
-				xShapeInfo,
-				resultShapeInfo,
-				dimension,
-				dimensionLength,reduceDimension);
+			data,
+			result,
+			extraParams,
+			numOriginalTads,
+			sharedMemorySize,
+			xShapeInfo,
+			resultShapeInfo,
+			dimension,
+			dimensionLength);
 
 }
 
@@ -593,27 +659,19 @@ __global__ void collapseTad_double(
 		double *data
 		,double *result
 		,double *extraParams
-		,int elementsPerTad
-		,int numTads
-		,int n
-		,int elementWiseStride
 		,int numOriginalTads,int sharedMemorySize,
 		int *xShapeInfo,int *resultShapeInfo
-		,int *dimension,int dimensionLength,int reduceDimension) {
+		,int *dimension,int dimensionLength) {
 	collapseTad<double>(
 			data,
 			result,
 			extraParams,
-			elementsPerTad,
-			numTads,
-			n,
-			elementWiseStride,
 			numOriginalTads,
 			sharedMemorySize,
 			xShapeInfo,
 			resultShapeInfo,
 			dimension,
-			dimensionLength,reduceDimension);
+			dimensionLength);
 
 }
 

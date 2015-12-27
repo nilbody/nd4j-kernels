@@ -5,9 +5,9 @@
  *      Author: agibsonccc
  */
 
-#include <tad.h>
-#include <helper_string.h>
-#include <helper_cuda.h>
+#include "tad.h"
+#include "helper_string.h"
+#include "helper_cuda.h"
 
 
 #ifndef ARRAY_H_
@@ -51,9 +51,21 @@ struct NDArray<float> {
  */
 template <typename T>
 __device__ __host__ size_t length(NDArray<T> *arr) {
+	size_t size = prod(arr->shape,arr->rank);
+	return size;
+}
+
+/**
+ * Returns the length of
+ * this ndarray
+ * in bytes
+ */
+template <typename T>
+__device__ __host__ size_t lengthInBytes(NDArray<T> *arr) {
 	size_t size = prod(arr->shape,arr->rank) * sizeof(T);
 	return size;
 }
+
 /**
  * Creates an ndarray
  * from the given rank,shape,stride,
@@ -67,7 +79,7 @@ __device__ __host__ NDArray<T> * createFrom(int rank,int *shape,int *stride,int 
 	ret->shape = shape;
 	ret->stride = stride;
 	ret->offset = offset;
-	size_t size = length(ret);
+	size_t size = lengthInBytes(ret);
 	ret->data = (T*) malloc(size);
 	memset(ret->data,defaultValue,size);
 	return ret;
@@ -84,7 +96,7 @@ template <typename T>
 __host__ void allocateNDArrayOnGpu(NDArray<T> **arr) {
 	NDArray<T> *arrRef = *arr;
 	T *gData;
-	size_t size = prod(arrRef->shape,arrRef->rank) * sizeof(T);
+	size_t size = lengthInBytes(arrRef);
 	checkCudaErrors(cudaMalloc(&gData,size));
 	checkCudaErrors(cudaMemcpy(gData,arrRef->data,size,cudaMemcpyHostToDevice));
 	arrRef->gData = gData;
@@ -120,7 +132,7 @@ __device__ NDArray<T>* createFromAndAllocateOnGpu(int rank,int *shape,int *strid
 template <typename T>
 __host__ void copyFromGpu(NDArray<T> ** arr) {
 	NDArray<T> *arrRef = *arr;
-	checkCudaErrors(cudaMemcpy(arrRef->data,arrRef->gData,length(arrRef),cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(arrRef->data,arrRef->gData,lengthInBytes(arrRef),cudaMemcpyDeviceToHost));
 }
 
 template <typename T>
@@ -175,6 +187,20 @@ __host__ __device__ ShapeInformation *shapeInfoForArray(NDArray<T> *arr) {
 template <typename T>
 __host__ __device__ NDArray<T> * createFromShapeInfo(ShapeInformation *info,T defaultValue) {
 	return createFrom(info->rank,info->shape,info->stride,info->offset,defaultValue);
+}
+
+template <typename T>
+__device__ void printArrGpu(NDArray<T> *arr) {
+	for(int i = 0; i < length(arr); i++) {
+		printf("Arr[%d] is %f\n",arr->gData[i]);
+	}
+}
+
+template <typename T>
+__host__ void printArrHost(NDArray<T> *arr) {
+	for(int i = 0; i < length(arr); i++) {
+		printf("Arr[%d] is %f\n",i,arr->data[i]);
+	}
 }
 
 #endif /* ARRAY_H_ */
