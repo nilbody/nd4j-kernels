@@ -1,4 +1,4 @@
-namespace nd4j {
+#include <scalar.h>
 namespace functions {
 namespace scalar {
 /**
@@ -36,4 +36,4 @@ public:
 
 }
 }
-}
+

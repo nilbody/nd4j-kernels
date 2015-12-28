@@ -10,7 +10,6 @@
 #ifndef ARRAY_H_
 #define ARRAY_H_
 #include <shape.h>
-using namespace nd4j::shape;
 
 namespace nd4j {
 namespace array {
@@ -129,7 +128,7 @@ struct NDArray<float> {
   * @return the shape information for the given array
   */
  template <typename T>
- __host__ __device__ ShapeInformation *shapeInfoForArray(NDArray<T> *arr);
+ __host__ __device__ shape::ShapeInformation *shapeInfoForArray(NDArray<T> *arr);
 
 
  /**
@@ -140,7 +139,7 @@ struct NDArray<float> {
   *
   */
  template <typename T>
- __host__ __device__ NDArray<T> * createFromShapeInfo(ShapeInformation *info,T defaultValue);
+ __host__ __device__ NDArray<T> * createFromShapeInfo(shape::ShapeInformation *info,T defaultValue);
 
  /**
   * Print the array on the gpu

@@ -1,5 +1,4 @@
 //an op for the kernel
-namespace nd4j {
 namespace functions {
 namespace reduce {
 
@@ -250,7 +249,7 @@ __device__ void collapseTad(
 
 }
 }
-}
+
 
 
 

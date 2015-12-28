@@ -1,13 +1,12 @@
 #include <indexreduce.h>
-#include <reduce_common.h>
-
-namespace nd4j {
+#include <shape.h>
 namespace functions {
 namespace indexreduce {
 
 template <typename T>
 class BaseIndexReduce : IndexReduce<T> {
 
+public:
 
 	/**
 	 * @param n n is the number of
@@ -27,7 +26,6 @@ class BaseIndexReduce : IndexReduce<T> {
 	 *                          0 is the number of elements per vector
 	 *                          1 is the number of vectors
 	 */
-	template<typename T>
 	__device__ void transform(
 			int n
 			,T *dx
@@ -82,8 +80,8 @@ class BaseIndexReduce : IndexReduce<T> {
 
 
 		//only compute the tad indexes once
-		__shared__ TADPermuteInfo xTadInfo;
-		__shared__ TADPermuteInfo resultTadInfo;
+		__shared__ shape::TADPermuteInfo xTadInfo;
+		__shared__ shape::TADPermuteInfo resultTadInfo;
 		int valueOffset;
 
 		__shared__ IndexValue<T> startValue;
@@ -94,16 +92,16 @@ class BaseIndexReduce : IndexReduce<T> {
 		IndexValue<T> reduction = {extraParams[0],0};
 		if(tid == 0) {
 			if(dimensionLength == 1) {
-				if(dimension[0] == MAX_DIMENSION)
+				if(dimension[0] == shape::MAX_DIMENSION)
 					resultScalar = 1;
 				else
 					resultScalar = 0;
 			}
 			else
 				resultScalar = 0;
-			resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-			xOffset = offset(xShapeInfo);
-			xElementWiseStride = elementWiseStride(xShapeInfo);
+			resultLength = shape::prod(shape::shapeOf(resultShapeInfo),shape::rank(resultShapeInfo));
+			xOffset = shape::offset(xShapeInfo);
+			xElementWiseStride = shape::elementWiseStride(xShapeInfo);
 
 
 		}
@@ -152,28 +150,28 @@ class BaseIndexReduce : IndexReduce<T> {
 
 		else if(!resultScalar) {
 			if(tid == 0) {
-				xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-				resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
-				resultScalar = isScalar(resultShapeInfo);
-				currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
-				endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
-				resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-				xShape = shape(xShapeInfo);
-				xRank = rank(xShapeInfo);
-				xOffset = offset(xShapeInfo);
-				xElementWiseStride = elementWiseStride(xShapeInfo);
+				xTadInfo  = shape::tadInfo(xShapeInfo,dimension,dimensionLength);
+				resultTadInfo = shape::tadInfo(resultShapeInfo,dimension,dimensionLength);
+				resultScalar = shape::isScalar(resultShapeInfo);
+				currentBlockOffset = shape::offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
+				endingOffset = shape::offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
+				resultLength = shape::prod(shape::shapeOf(resultShapeInfo),shape::rank(resultShapeInfo));
+				xShape = shape::shapeOf(xShapeInfo);
+				xRank = shape::rank(xShapeInfo);
+				xOffset = shape::offset(xShapeInfo);
+				xElementWiseStride = shape::elementWiseStride(xShapeInfo);
 
 				//reduction on whole buffer
 				if(resultScalar)
 					xLength = n;
 
 				else
-					xLength = prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
+					xLength = shape::prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
 
-				valueOffset = tadOffset(xShapeInfo,currentBlockOffset);
-				double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
-				if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
-					tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
+				valueOffset = shape::tadOffset(xShapeInfo,currentBlockOffset);
+				double tads = shape::tensorsAlongDimension(xRank,shape::prod(xShape,xRank),xShape,dimension,dimensionLength);
+				if(gpuInformation[0] >= shape::MAX_NUM_THREADS && tads > gpuInformation[0])
+					tadsForBlock = shape::tadsPerBlock(gpuInformation[0],tads);
 				else
 					tadsForBlock = 1;
 				if(tadsForBlock < 1)
@@ -192,8 +190,8 @@ class BaseIndexReduce : IndexReduce<T> {
 
 			//number of tads per block to process
 			for(int i = 0; i < tadsForBlock; i++) {
-				int tadIndex = tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
-				int blockOffset = offset(tadIndex, xShapeInfo,dimension,dimensionLength,xTadInfo);
+				int tadIndex = shape::tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
+				int blockOffset = shape::offset(tadIndex, xShapeInfo,dimension,dimensionLength,xTadInfo);
 				//concurrently load all elements in to shared memory
 				if(elementsPerThread > 1) {
 					for(int i = 0; i < elementsPerThread; i++) {
@@ -252,8 +250,8 @@ class BaseIndexReduce : IndexReduce<T> {
 
 
 		if(!resultScalar && tid == 0) {
-			freePermuteInfo(xTadInfo);
-			freePermuteInfo(resultTadInfo);
+			shape::freePermuteInfo(xTadInfo);
+			shape::freePermuteInfo(resultTadInfo);
 		}
 
 	}
@@ -370,7 +368,6 @@ class BaseIndexReduce : IndexReduce<T> {
 	 * @param dimensionLength the length of the number of dimensions
 	 *
 	 */
-	template <typename T>
 	__device__ void collapseTad(
 			T *data
 			,T *result
@@ -403,9 +400,9 @@ class BaseIndexReduce : IndexReduce<T> {
 			return;
 
 
-		__shared__ TADPermuteInfo xTadInfo;
+		__shared__ shape::TADPermuteInfo xTadInfo;
 		if(tid == 0) {
-			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
+			xTadInfo  = shape::tadInfo(xShapeInfo,dimension,dimensionLength);
 		}
 
 		__syncthreads();
@@ -422,7 +419,7 @@ class BaseIndexReduce : IndexReduce<T> {
 		 */
 
 		//number of tads per reduce index
-		int tadsPerReduceIndex2 = tadsPerReduceIndex(numTads,numOriginalTads);
+		int tadsPerReduceIndex2 = shape::tadsPerReduceIndex(numTads,numOriginalTads);
 		//each thread does a tad
 		if(tid >= tadsPerReduceIndex2)
 			return;
@@ -458,7 +455,7 @@ class BaseIndexReduce : IndexReduce<T> {
 		//iterating via element wise stride
 		//note here blockidx.x + tid is the tad we want
 		int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
-		int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
+		int offsetForBlock = shape::offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
 
 		for(int i = 0; i < elementsPerTad; offsetForBlock += elementWiseStride,i++) {
 			IndexValue<T> opApply = {data[offsetForBlock],offsetForBlock};
@@ -476,10 +473,10 @@ class BaseIndexReduce : IndexReduce<T> {
 			}
 
 			result[blockIdx.x] = sPartials[0].index;
-			freePermuteInfo(xTadInfo);
+			shape::freePermuteInfo(xTadInfo);
 		}
 	}
 };
 }
 }
-}
+

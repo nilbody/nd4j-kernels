@@ -6,9 +6,6 @@
  */
 
 #include <shape.h>
-#include <tad.h>
-#include <mathutil.h>
-namespace nd4j {
 namespace shape {
 /**
  * @param toCopy the shape to copy
@@ -47,6 +44,7 @@ __device__ __host__ int* doPermuteSwap(int length,int  *shape, int *rearrange) {
 	}
 	return ret;
 }
+
 
 
 
@@ -107,9 +105,6 @@ __device__ __host__ char getOrder(int length ,int *shape,int *stride,int element
 
 }
 
-
-
-
 /**
  * Ensure that every value in the re arrange
  * array is unique
@@ -138,7 +133,6 @@ __device__ __host__ int checkArrangeArray(int *arr,int *shape,int arrLength,int 
 }
 
 
-
 /**
  * Permute the shape information
  * @param info the shape information to permute
@@ -159,6 +153,9 @@ __device__ __host__ void permute(ShapeInformation **info,int *rearrange,int rank
 	infoDeref->order = order;
 
 }
+
+
+
 
 
 /**
@@ -189,6 +186,7 @@ __device__ __host__ int * shapeOf(int *buffer) {
 
 
 
+
 /**
  * Return a copy of a buffer.
  * This buffer allocates memory
@@ -200,6 +198,7 @@ __device__ __host__ int *copyOf(int length,int *toCopy) {
 		ret[i] = toCopy[i];
 	return ret;
 }
+
 
 
 /**
@@ -218,6 +217,11 @@ __device__ __host__ int * permutedStrides(int *toPermute,int shapeRank,int *rear
 	free(strideCopy);
 	return strideCopy;
 }
+
+
+
+
+
 
 
 /**
@@ -242,8 +246,6 @@ __device__ __host__ int *slice(int *shape) {
 __device__ __host__ int shapeInfoLength(int rank) {
 	return rank * 2 + 4;
 }
-
-
 
 
 /**
@@ -281,6 +283,8 @@ __device__ __host__ ShapeInformation* infoFromBuffer(int *buffer) {
 	info->order = (char) buffer[length - 1];
 	return info;
 }
+
+
 
 
 /**
@@ -331,6 +335,12 @@ __device__ __host__ int elementWiseStride(int *buffer) {
 	return buffer[length2 - 2];
 }
 
+
+
+
+
+
+
 /**
  * Returns whether
  * the given shape info buffer
@@ -346,6 +356,7 @@ __device__ __host__ int isScalar(int *info) {
 	}
 	return 0;
 }
+
 
 /**
  * Returns whether
@@ -364,15 +375,6 @@ __device__ __host__ int isScalar(volatile ShapeInformation *info) {
 	return 0;
 }
 
-
-}
-}
-
-
-namespace nd4j {
-namespace tad {
-
-using namespace nd4j::shape;
 
 /**
  * Return a copy of this array with the
@@ -1003,7 +1005,7 @@ __device__ __host__ int tadsPerBlock(int blockSize,int tads) {
  * Returns a shape buffer
  * for the shape information metadata.
  */
-__device__ __host__ int * toShapeBuffer(nd4j::shape::ShapeInformation *info) {
+__device__ __host__ int * toShapeBuffer(ShapeInformation *info) {
 	int *ret = new int[shapeInfoLength(info->rank)];
 	int count = 1;
 	ret[0] = info->rank;
@@ -1023,7 +1025,79 @@ __device__ __host__ int * toShapeBuffer(nd4j::shape::ShapeInformation *info) {
 }
 
 
+/**
+ * Given an linear index, element wise stride
+ * and the length of each tad
+ * map a linear index to a tad
+ * @param i the index to map
+ * @param the element wise stride for the tads
+ * @param numElementsPerTad the number of elements
+ * per tad
+ */
+__device__ __host__ int tadIndex(int i,int elementWiseStride,int numElementsPerTad) {
+	return i / (numElementsPerTad * elementWiseStride);
 }
+
+/**
+ * Map a tad to a
+ * reduction index.
+ * @param tadIndexForOriginal the original tad index for the
+ * split up problem (eg: split is dimension 3 mapping to a 2,3 problem)
+ * @param tadsForReduced the number of tads for the shrunk down problem (eg: 2,3)
+ * @param tadsForOriginal the number of tads for the smaller problem (eg: 3)
+ */
+__device__ __host__ int reductionIndexForTad(int tadIndexForOriginal,int tadsForReduced,int tadsForOriginal) {
+	if(tadIndexForOriginal == 0)
+		return 0;
+	return tadIndexForOriginal / (tadsForOriginal / tadsForReduced);
+}
+
+/**
+ * Computes the number of tads
+ * per reduce index for the
+ * reduction tad.
+ */
+__device__ __host__ int tadsPerReduceIndex(int tadsForReduce,int tadsForOriginal) {
+	return tadsForOriginal / tadsForReduce;
+}
+
+
+/**
+ * Maps a linear index to a reduction index
+ * @param i the linear index to map
+ * @param elementWiseStride the element wise stride
+ * for the multiple problem
+ * @param tadNum the number of tads for the shrunken problem
+ * @param originalTadNum the tad number for the reduced version of the problem
+ */
+__device__ __host__ int reductionIndexForLinear(
+		int i
+		,int elementWiseStride
+		,int numElementsPerTad
+		,int tadNum
+		,int originalTadNum) {
+	int tad = tadIndex(i,elementWiseStride,numElementsPerTad);
+	return reductionIndexForTad(tad,tadNum,originalTadNum);
+}
+
+
+
+
+/**
+ * Returns the prod of the data
+ * up to the given length
+ */
+__device__ __host__ int prod(int *data,int length) {
+	int prod = 1;
+	for(int i = 0; i < length; i++) {
+		prod *= data[i];
+	}
+
+	return prod;
+}
+
+
+
 }
 
 

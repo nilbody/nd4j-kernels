@@ -7,7 +7,6 @@
 
 #ifndef BROADCASTING_H_
 #define BROADCASTING_H_
-namespace nd4j {
 namespace functions {
 namespace broadcast {
 
@@ -57,7 +56,7 @@ public:
 };
 }
 }
-}
+
 
 
 

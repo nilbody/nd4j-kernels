@@ -7,7 +7,6 @@
 
 #ifndef SCALAR_H_
 #define SCALAR_H_
-namespace nd4j {
 namespace functions {
 namespace scalar {
 template <typename T>
@@ -42,7 +41,7 @@ public:
 
 }
 }
-}
+
 
 
 

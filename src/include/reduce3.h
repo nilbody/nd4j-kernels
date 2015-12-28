@@ -7,7 +7,6 @@
 
 #ifndef REDUCE3_H_
 #define REDUCE3_H_
-namespace nd4j {
 namespace functions {
 namespace reduce3 {
 
@@ -116,7 +115,7 @@ public:
 
 }
 }
-}
+
 
 
 

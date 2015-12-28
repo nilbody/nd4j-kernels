@@ -1,11 +1,8 @@
-#include <reduce_common.h>
 #include <sharedmem.h>
 #include <postprocess.h>
-#include <tad.h>
 #include <shape.h>
+#include <reduce3.h>
 
-
-namespace nd4j {
 namespace functions {
 namespace reduce3 {
 
@@ -134,9 +131,9 @@ public:
 
 
 		//only compute the tad indexes once
-		__shared__ TADPermuteInfo xTadInfo;
-		__shared__ TADPermuteInfo yTadInfo;
-		__shared__ TADPermuteInfo resultTadInfo;
+		__shared__ shape::TADPermuteInfo xTadInfo;
+		__shared__ shape::TADPermuteInfo yTadInfo;
+		__shared__ shape::TADPermuteInfo resultTadInfo;
 
 		int valueOffset,valueYOffset;
 
@@ -146,19 +143,19 @@ public:
 		T reduction = extraParams[0];
 		if(tid == 0) {
 			if(dimensionLength == 1) {
-				if(dimension[0] == MAX_DIMENSION)
+				if(dimension[0] == shape::MAX_DIMENSION)
 					resultScalar = 1;
 				else
 					resultScalar = 0;
 			}
 			else
 				resultScalar = 0;
-			resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
-			xOffset = offset(xShapeInfo);
-			xElementWiseStride = elementWiseStride(xShapeInfo);
+			resultLength = shape::prod(shape::shapeOf(resultShapeInfo),shape::rank(resultShapeInfo));
+			xOffset = shape::offset(xShapeInfo);
+			xElementWiseStride = shape::elementWiseStride(xShapeInfo);
 
-			yElementWiseStride = elementWiseStride(yShapeInfo);
-			yOffset = offset(yShapeInfo);
+			yElementWiseStride = shape::elementWiseStride(yShapeInfo);
+			yOffset = shape::offset(yShapeInfo);
 		}
 
 
@@ -206,28 +203,28 @@ public:
 
 		else if(!resultScalar) {
 			if(tid == 0) {
-				xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
-				yTadInfo  = tadInfo(yShapeInfo,dimension,dimensionLength);
-				resultTadInfo = tadInfo(resultShapeInfo,dimension,dimensionLength);
+				xTadInfo  = shape::tadInfo(xShapeInfo,dimension,dimensionLength);
+				yTadInfo  = shape::tadInfo(yShapeInfo,dimension,dimensionLength);
+				resultTadInfo = shape::tadInfo(resultShapeInfo,dimension,dimensionLength);
 
 
-				resultScalar = isScalar(resultShapeInfo);
+				resultScalar = shape::isScalar(resultShapeInfo);
 				currentBlockOffset = offset(blockIdx.x, xShapeInfo,dimension,dimensionLength,xTadInfo);
 				endingOffset = offset(blockIdx.x + 1 ,xShapeInfo,dimension,dimensionLength,xTadInfo);
-				resultLength = prod(shape(resultShapeInfo),rank(resultShapeInfo));
+				resultLength = shape::prod(shape::shapeOf(resultShapeInfo),shape::rank(resultShapeInfo));
 
 				//initialize x
-				xShape = shape(xShapeInfo);
-				xRank = rank(xShapeInfo);
-				xOffset = offset(xShapeInfo);
-				xElementWiseStride = elementWiseStride(xShapeInfo);
+				xShape = shape::shapeOf(xShapeInfo);
+				xRank = shape::rank(xShapeInfo);
+				xOffset = shape::offset(xShapeInfo);
+				xElementWiseStride = shape::elementWiseStride(xShapeInfo);
 
 
 				//initialize y
-				yShape = shape(yShapeInfo);
-				yRank = rank(yShapeInfo);
-				yOffset = offset(yShapeInfo);
-				yElementWiseStride = elementWiseStride(yShapeInfo);
+				yShape = shape::shapeOf(yShapeInfo);
+				yRank = shape::rank(yShapeInfo);
+				yOffset = shape::offset(yShapeInfo);
+				yElementWiseStride = shape::elementWiseStride(yShapeInfo);
 
 
 				currentYBlockOffset = offset(blockIdx.x, yShapeInfo,dimension,dimensionLength,yTadInfo);
@@ -239,12 +236,12 @@ public:
 					xLength = n;
 
 				else
-					xLength = prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
+					xLength = shape::prod(xTadInfo.tensorShape,xTadInfo.tensorShapeLength);
 
-				valueOffset = tadOffset(xShapeInfo,currentBlockOffset);
-				double tads = tensorsAlongDimension(xRank,prod(xShape,xRank),xShape,dimension,dimensionLength);
-				if(gpuInformation[0] >= MAX_NUM_THREADS && tads > gpuInformation[0])
-					tadsForBlock = tadsPerBlock(gpuInformation[0],tads);
+				valueOffset = shape::tadOffset(xShapeInfo,currentBlockOffset);
+				double tads = shape::tensorsAlongDimension(xRank,shape::prod(xShape,xRank),xShape,dimension,dimensionLength);
+				if(gpuInformation[0] >= shape::MAX_NUM_THREADS && tads > gpuInformation[0])
+					tadsForBlock = shape::tadsPerBlock(gpuInformation[0],tads);
 				else
 					tadsForBlock = 1;
 				if(tadsForBlock < 1)
@@ -263,7 +260,7 @@ public:
 
 			//number of tads per block to process
 			for(int i = 0; i < tadsForBlock; i++) {
-				int tadIndex = tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
+				int tadIndex = shape::tadForBlockIndex(gpuInformation[0],blockIdx.x,i);
 				int blockOffset = offset(tadIndex, xShapeInfo,dimension,dimensionLength,xTadInfo);
 				int blockYOffset = offset(tadIndex, yShapeInfo,dimension,dimensionLength,yTadInfo);
 
@@ -334,9 +331,9 @@ public:
 
 
 		if(resultScalar && tid == 0) {
-			freePermuteInfo(xTadInfo);
-			freePermuteInfo(yTadInfo);
-			freePermuteInfo(resultTadInfo);
+			shape::freePermuteInfo(xTadInfo);
+			shape::freePermuteInfo(yTadInfo);
+			shape::freePermuteInfo(resultTadInfo);
 		}
 
 
@@ -346,4 +343,4 @@ public:
 
 }
 }
-}
+

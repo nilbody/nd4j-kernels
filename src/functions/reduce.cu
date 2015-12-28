@@ -5,24 +5,15 @@
  *      Author: agibsonccc
  */
 
-#include <device_functions.h>
-#include <device_launch_parameters.h>
+
 #include <reduce.h>
 #include <sharedmem.h>
 #include <stdio.h>
-#include <tad.h>
-#include <vector_types.h>
+#include <shape.h>
 
-#include "../array/shape.cu"
-#include "reduce_common.cu"
-
-#define MAX_DIMENSION  0x7fffffff
-
-namespace nd4j {
 namespace functions {
 namespace reduce {
-using namespace nd4j::tad;
-using namespace nd4j::shape;
+
 
 
 /**
@@ -141,7 +132,6 @@ public:
 	 *                          0 is the number of elements per vector
 	 *                          1 is the number of vectors
 	 */
-	template<typename T>
 	__device__ void transform(
 			int n
 			,T *dx
@@ -186,17 +176,17 @@ public:
 		__shared__  int tensorsForDimension;
 
 		//only compute the tad indexes once
-		__shared__ TADPermuteInfo xTadInfo;
+		__shared__ shape::TADPermuteInfo xTadInfo;
 
 
 		__shared__  int reductionIndexesPerBlock;
 
 		T reduction = extraParams[0];
 		if(tid == 0) {
-			tensorsForDimension = tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
-			resultLength = length(resultShapeInfo);
+			tensorsForDimension = shape::tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
+			resultLength = shape::length(resultShapeInfo);
 			if(dimensionLength == 1) {
-				if(dimension[0] == MAX_DIMENSION)
+				if(dimension[0] == shape::MAX_DIMENSION)
 					resultScalar = 1;
 				else
 					resultScalar = 0;
@@ -206,9 +196,9 @@ public:
 
 			if(resultLength == 1)
 				resultScalar = 1;
-			xOffset = offset(xShapeInfo);
-			xElementWiseStride = elementWiseStride(xShapeInfo);
-			xLength = length(xShapeInfo);
+			xOffset = shape::offset(xShapeInfo);
+			xElementWiseStride = shape::elementWiseStride(xShapeInfo);
+			xLength = shape::length(xShapeInfo);
 			elementsPerTad = xLength / resultLength;
 
 			if(gridDim.x >= resultLength) {
@@ -219,15 +209,15 @@ public:
 			}
 
 
-			xTadInfo = tadInfo(xShapeInfo,dimension,dimensionLength);
+			xTadInfo = shape::tadInfo(xShapeInfo,dimension,dimensionLength);
 
 
 		}
 		__syncthreads();
 
-		if(!resultScalar && nd4j::shape::elementWiseStride(xShapeInfo) < 0 && tid == 0) {
+		if(!resultScalar && shape::elementWiseStride(xShapeInfo) < 0 && tid == 0) {
 			//need to decompose problem
-			freePermuteInfo(xTadInfo);
+			shape::freePermuteInfo(xTadInfo);
 			for(int i = dimensionLength - 1; i >= 0; i--) {
 				transform(n,result,resultShapeInfo,extraParams,result,resultShapeInfo,gpuInformation,dimension - 1,dimensionLength - 1,postProcessOrNot);
 			}
@@ -284,7 +274,7 @@ public:
 					//process each tad
 					//tad wrt the thread
 					int currTad = tid + (blockIdx.x  * reductionIndexesPerBlock);
-					int offsetForTad = offset(currTad,xShapeInfo,dimension,dimensionLength,xTadInfo);
+					int offsetForTad = shape::offset(currTad,xShapeInfo,dimension,dimensionLength,xTadInfo);
 
 					//update the reduction for the thread for the current tad
 					//note here that we compute the offset and then accumulate in shared memory
@@ -335,7 +325,7 @@ public:
 						result[reductionIndexToProcess] = sPartials[i];
 					}
 
-					freePermuteInfo(xTadInfo);
+					shape::freePermuteInfo(xTadInfo);
 
 				}
 
@@ -461,7 +451,6 @@ public:
 	 * @param dimensionLength the length of the number of dimensions
 	 *
 	 */
-	template <typename T>
 	__device__ void collapseTad(
 			T *data
 			,T *result
@@ -473,7 +462,7 @@ public:
 			,int *dimension,int dimensionLength) {
 		SharedMemory<T> val;
 		//number of tads for the reduced solution
-		int numTads = tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
+		int numTads = shape::tensorsAlongDimension(xShapeInfo,dimension,dimensionLength);
 
 		volatile T *sPartials = val.getPointer();
 		int tid = threadIdx.x;
@@ -491,9 +480,9 @@ public:
 		//don't bother iterating on this block if it goes over the number of tads
 
 
-		__shared__ TADPermuteInfo xTadInfo;
+		__shared__ shape::TADPermuteInfo xTadInfo;
 		if(tid == 0) {
-			xTadInfo  = tadInfo(xShapeInfo,dimension,dimensionLength);
+			xTadInfo  = shape::tadInfo(xShapeInfo,dimension,dimensionLength);
 		}
 
 		__syncthreads();
@@ -513,7 +502,7 @@ public:
 		//number of tads per reduce index
 		__shared__ int tadsPerReduceIndex2;
 		if(tid == 0) {
-			tadsPerReduceIndex2 = tadsPerReduceIndex(numTads,numOriginalTads);
+			tadsPerReduceIndex2 = shape::tadsPerReduceIndex(numTads,numOriginalTads);
 		}
 
 		__syncthreads();
@@ -553,11 +542,11 @@ public:
 		//iterating via element wise stride
 		//note here blockidx.x + tid is the tad we want
 		int tadForThread = tid + blockIdx.x * tadsPerReduceIndex2;
-		int offsetForBlock = offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
-		for(int i = 0; i < tadsPerReduceIndex2; offsetForBlock += nd4j::shape::elementWiseStride(xShapeInfo),i++) {
+		int offsetForBlock = shape::offset(tadForThread,xShapeInfo,dimension,dimensionLength,xTadInfo);
+		for(int i = 0; i < tadsPerReduceIndex2; offsetForBlock += shape::elementWiseStride(xShapeInfo),i++) {
 			sPartials[tid] = update(sPartials[tid],op(data[offsetForBlock],extraParams),extraParams);
 			printf("TAD %d and tid %d processing value %f with element wise stride %d and block %d and tads per reduce index %d\n"
-					,tadForThread,tid,data[offsetForBlock],nd4j::shape::elementWiseStride(xShapeInfo),blockIdx.x,tadsPerReduceIndex2);
+					,tadForThread,tid,data[offsetForBlock],shape::elementWiseStride(xShapeInfo),blockIdx.x,tadsPerReduceIndex2);
 			__syncthreads();
 		}
 
@@ -571,20 +560,14 @@ public:
 			}
 
 			result[blockIdx.x] = sPartials[0];
-			freePermuteInfo(xTadInfo);
+			shape::freePermuteInfo(xTadInfo);
 		}
 	}
 
 };
 
-
-
-
-
-
-
 }
 }
-}
+
 
 

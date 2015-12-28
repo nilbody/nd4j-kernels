@@ -141,8 +141,8 @@ __host__ __device__ void allocArrayData(NDArray<T> ** arr) {
  * @return the shape information for the given array
  */
 template <typename T>
-__host__ __device__ ShapeInformation *shapeInfoForArray(NDArray<T> *arr) {
-	ShapeInformation *info = (ShapeInformation *) malloc(sizeof(ShapeInformation));
+__host__ __device__ shape::ShapeInformation *shapeInfoForArray(NDArray<T> *arr) {
+	shape::ShapeInformation *info = (shape::ShapeInformation *) malloc(sizeof(shape::ShapeInformation));
 	info->offset = arr->offset;
 	info->order = arr->ordering;
 	info->shape = arr->shape;
@@ -161,7 +161,7 @@ __host__ __device__ ShapeInformation *shapeInfoForArray(NDArray<T> *arr) {
  *
  */
 template <typename T>
-__host__ __device__ NDArray<T> * createFromShapeInfo(ShapeInformation *info,T defaultValue) {
+__host__ __device__ NDArray<T> * createFromShapeInfo(shape::ShapeInformation *info,T defaultValue) {
 	return createFrom(info->rank,info->shape,info->stride,info->offset,defaultValue);
 }
 
